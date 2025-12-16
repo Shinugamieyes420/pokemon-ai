@@ -12,7 +12,7 @@ const MOVES_DB: Record<string, Move> = {
   'quick-attack': { name: 'Quick Attack', power: 40, type: 'normal', accuracy: 100, pp: 30 },
   'slam': { name: 'Slam', power: 80, type: 'normal', accuracy: 75, pp: 20 },
   'double-edge': { name: 'Double-Edge', power: 120, type: 'normal', accuracy: 100, pp: 15, flags: { recoil: true } },
-  'hyper-beam': { name: 'Hyper Beam', power: 150, type: 'normal', accuracy: 90, pp: 5 },
+  'hyper-beam': { name: 'Hyper Beam', power: 150, type: 'normal', accuracy: 90, pp: 5, flags: { charge: true } }, // User requested charge behavior
   'body-slam': { name: 'Body Slam', power: 85, type: 'normal', accuracy: 100, pp: 15, effect: { type: 'paralysis', chance: 0.3 } },
   'tri-attack': { name: 'Tri Attack', power: 80, type: 'normal', accuracy: 100, pp: 10, effect: { type: 'paralysis', chance: 0.2 } },
   'strength': { name: 'Strength', power: 80, type: 'normal', accuracy: 100, pp: 15 },
@@ -356,9 +356,8 @@ export const fetchSpecificPokemon = async (ids: number[]): Promise<BattlePokemon
   return results.map(data => formatPokemonData(data, 100));
 };
 
-export const getPokemonList = (page: number, limit: number, search: string = '') => {
-  const start = 1;
-  const end = TOTAL_POKEMON;
+// Updated to support ranges for Generation tabs
+export const getPokemonList = (page: number, limit: number, search: string = '', startId: number = 1, endId: number = TOTAL_POKEMON) => {
   const list = [];
   
   if (search && !isNaN(parseInt(search))) {
@@ -371,8 +370,8 @@ export const getPokemonList = (page: number, limit: number, search: string = '')
 
   const offset = (page - 1) * limit;
   for (let i = 0; i < limit; i++) {
-      const id = start + offset + i;
-      if (id > end) break;
+      const id = startId + offset + i;
+      if (id > endId) break;
       list.push({
           id,
           sprite: getSpriteUrl(id, 'icon'),

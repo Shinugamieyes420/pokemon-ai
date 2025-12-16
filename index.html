@@ -2,97 +2,86 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>PokeAI Red</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
       body {
         font-family: 'Press Start 2P', system-ui, sans-serif;
-        background-color: #202020;
+        background-color: #101010;
+        overflow: hidden; /* Prevent scrolling on mobile */
       }
       .pixel-art {
         image-rendering: pixelated;
       }
       
-      /* 3D Battle Arena Styles */
-      .scene-3d {
-        perspective: 600px;
-        overflow: hidden;
-      }
-      .arena-floor {
-        transform: rotateX(40deg) scale(1.4);
-        transform-origin: center bottom;
-        box-shadow: inset 0 0 50px rgba(0,0,0,0.5);
-      }
-      .sprite-stand {
-        transform: rotateX(-10deg); /* Counteract floor tilt slightly */
-        transform-origin: bottom center;
+      /* Retro CRT Effect */
+      .scanlines {
+        background: linear-gradient(
+          to bottom,
+          rgba(255,255,255,0),
+          rgba(255,255,255,0) 50%,
+          rgba(0,0,0,0.2) 50%,
+          rgba(0,0,0,0.2)
+        );
+        background-size: 100% 4px;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        z-index: 9999;
+        pointer-events: none;
       }
 
-      /* Gym Backgrounds (Enhanced) */
-      .bg-gym-rock { background: radial-gradient(circle at center, #7a7a7a 0%, #2e2e2e 80%); }
-      .bg-gym-water { background: radial-gradient(circle at center, #4facfe 0%, #00f2fe 80%); }
-      .bg-gym-electric { background: repeating-linear-gradient(45deg, #fdfbfb, #fdfbfb 10px, #ffd700 10px, #ffd700 20px); }
-      .bg-gym-grass { background: radial-gradient(circle at bottom, #d4fc79 0%, #96e6a1 80%); }
-      .bg-gym-poison { background: radial-gradient(circle, #e0c3fc 0%, #8ec5fc 100%); }
-      .bg-gym-psychic { background: conic-gradient(from 0deg, #eeaeca, #94bbe9, #eeaeca); }
-      .bg-gym-fire { background: radial-gradient(circle at center, #ff9a9e 0%, #550000 90%); }
-      .bg-gym-ground { background: linear-gradient(to bottom, #434343 0%, #1a1a1a 100%); }
+      /* 3D Battle Arena Styles - Responsive */
+      .scene-container {
+        width: 100%;
+        max-width: 1000px;
+        aspect-ratio: 16/9;
+        margin: 0 auto;
+        position: relative;
+      }
+
+      .scene-3d {
+        perspective: 800px;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+        position: relative;
+        border-radius: 8px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      }
+
+      .arena-floor {
+        transform: rotateX(40deg) scale(1.6);
+        transform-origin: center 60%;
+        box-shadow: inset 0 0 100px rgba(0,0,0,0.6);
+      }
       
-      /* Status Icons */
-      .status-burn { color: #ff4500; text-shadow: 1px 1px 0 #000; animation: blink 1s infinite; }
-      .status-paralyze { color: #ffd700; text-shadow: 1px 1px 0 #000; animation: blink 0.5s infinite; }
-      .status-poison { color: #a040a0; text-shadow: 1px 1px 0 #000; animation: blink 1s infinite; }
-      .status-sleep { color: #8c888c; text-shadow: 1px 1px 0 #000; animation: float 2s infinite; }
+      .sprite-stand {
+        transform: rotateX(-10deg) scale(1.1); /* Slightly larger for visibility */
+        transform-origin: bottom center;
+        filter: drop-shadow(0 10px 5px rgba(0,0,0,0.5));
+      }
 
       /* Intro Animations */
-      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
-      @keyframes scrollBg { from { background-position: 0 0; } to { background-position: 100% 100%; } }
-      
-      .intro-fade { animation: fadeIn 2s ease-in; }
-      .intro-flash { animation: flash 0.2s 2; }
-      
-      /* Battle Animations */
-      @keyframes slideInLeft { from { transform: translateX(-100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-      @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-      @keyframes faintAnim { to { transform: translateY(50px); opacity: 0; } }
-      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+      @keyframes cinematicFade { 0% { opacity: 0; transform: scale(1.1); } 100% { opacity: 1; transform: scale(1); } }
+      @keyframes textGlow { 0%, 100% { text-shadow: 0 0 10px #ff0000; } 50% { text-shadow: 0 0 20px #ffff00; } }
       @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
-      
-      @keyframes shake {
-        0% { transform: translateX(0); filter: brightness(1); }
-        20% { transform: translateX(-10px); filter: brightness(100) sepia(100%) hue-rotate(-50deg) saturate(600%) contrast(0.8); } 
-        40% { transform: translateX(10px); }
-        60% { transform: translateX(-10px); filter: brightness(100) sepia(100%) hue-rotate(-50deg) saturate(600%) contrast(0.8); }
-        80% { transform: translateX(10px); }
-        100% { transform: translateX(0); filter: brightness(1); }
-      }
 
-      @keyframes tackleEnemy {
-        0% { transform: translateX(0); }
-        50% { transform: translateX(60px) scale(1.1); }
-        100% { transform: translateX(0); }
-      }
-      
-      @keyframes tacklePlayer {
-        0% { transform: translateX(0); }
-        50% { transform: translateX(-60px) scale(1.1); }
-        100% { transform: translateX(0); }
-      }
+      .intro-cinematic { animation: cinematicFade 1.5s ease-out; }
+      .text-glowing { animation: textGlow 2s infinite; }
 
       /* FX Classes */
       .fx-fire { 
         animation: fireBlast 0.6s ease-out; 
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 100px; height: 100px; z-index: 50; border-radius: 50%; box-shadow: 0 0 20px #ff4500;
+        width: 15vw; height: 15vw; z-index: 50; border-radius: 50%; box-shadow: 0 0 20px #ff4500;
         background: radial-gradient(circle, rgba(255,69,0,1) 0%, rgba(255,215,0,0) 70%);
       }
       .fx-water { 
         animation: waterSplash 0.6s ease-out; 
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 100px; height: 100px; z-index: 50; 
+        width: 15vw; height: 15vw; z-index: 50; 
         background: radial-gradient(circle, #00f2fe 0%, #4facfe 100%);
         opacity: 0.6;
       }
@@ -107,12 +96,12 @@
       .fx-poison {
         background: radial-gradient(circle, rgba(128,0,128,0.8) 0%, transparent 70%);
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 120px; height: 120px; z-index: 50; animation: float 0.5s infinite;
+        width: 15vw; height: 15vw; z-index: 50; animation: float 0.5s infinite;
       }
       .fx-normal { 
         animation: normalHit 0.3s ease-out;
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 150px; height: 150px; z-index: 50;
+        width: 15vw; height: 15vw; z-index: 50;
         background: radial-gradient(circle, white 0%, transparent 70%);
       }
       
@@ -120,8 +109,65 @@
       @keyframes waterSplash { 0% { transform: translate(-50%, -50%) scale(0.1); } 100% { transform: translate(-50%, -50%) scale(2.0); opacity: 0; } }
       @keyframes electricShock { 0% { opacity: 0; } 20% { opacity: 1; } 100% { opacity: 0; } }
       @keyframes normalHit { 0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2); } }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+      @keyframes shake {
+        0% { transform: translateX(0); filter: brightness(1); }
+        20% { transform: translateX(-10px); filter: brightness(100) sepia(100%) hue-rotate(-50deg) saturate(600%) contrast(0.8); } 
+        40% { transform: translateX(10px); }
+        60% { transform: translateX(-10px); filter: brightness(100) sepia(100%) hue-rotate(-50deg) saturate(600%) contrast(0.8); }
+        80% { transform: translateX(10px); }
+        100% { transform: translateX(0); filter: brightness(1); }
+      }
+      @keyframes tackleEnemy { 0% { transform: translateX(0); } 50% { transform: translateX(60px) scale(1.1); } 100% { transform: translateX(0); } }
+      @keyframes tacklePlayer { 0% { transform: translateX(0); } 50% { transform: translateX(-60px) scale(1.1); } 100% { transform: translateX(0); } }
+
+      /* Improved Backgrounds */
+      .bg-gym-rock { 
+        background: 
+          radial-gradient(circle at 50% 20%, #5a5a5a 0%, #2a2a2a 100%),
+          repeating-linear-gradient(45deg, #333 0, #333 10px, #2a2a2a 10px, #2a2a2a 20px);
+      }
+      .bg-gym-water { 
+        background: 
+          linear-gradient(to bottom, #4facfe 0%, #00f2fe 100%),
+          radial-gradient(circle at top, rgba(255,255,255,0.2) 0%, transparent 60%);
+      }
+      .bg-gym-electric { 
+        background: 
+          repeating-linear-gradient(90deg, #333, #333 20px, #444 20px, #444 40px),
+          radial-gradient(circle at center, rgba(255,215,0,0.2) 0%, transparent 70%);
+      }
+      .bg-gym-grass { 
+        background: 
+          linear-gradient(to bottom, #d4fc79 0%, #96e6a1 100%),
+          repeating-radial-gradient(circle at 0 0, transparent 0, #96e6a1 10px),
+          repeating-linear-gradient(to right, #8fd3f4, #8fd3f4);
+      }
+      .bg-gym-poison { 
+        background: radial-gradient(circle, #e0c3fc 0%, #8ec5fc 100%); 
+      }
+      .bg-gym-psychic { 
+        background: 
+          conic-gradient(from 0deg, #eeaeca, #94bbe9, #eeaeca),
+          radial-gradient(circle, transparent 20%, #000 120%);
+      }
+      .bg-gym-fire { 
+        background: 
+          radial-gradient(circle at center, #ff9a9e 0%, #fecfef 90%, #550000 100%),
+          linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+      }
+      .bg-gym-ground { 
+        background: 
+          linear-gradient(to bottom, #434343 0%, #1a1a1a 100%),
+          url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjNDAzMDMwIi8+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiM1MDUwNTAiLz4KPC9zdmc+');
+      }
 
       .text-shadow { text-shadow: 2px 2px 0px #333; }
+      
+      /* Scrollbar Hiding */
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #202020; }
+      ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
     </style>
   <script type="importmap">
 {
@@ -135,7 +181,8 @@
 }
 </script>
 </head>
-  <body class="bg-slate-900 text-slate-900 overflow-hidden">
+  <body>
+    <div class="scanlines"></div>
     <div id="root"></div>
   </body>
 </html>

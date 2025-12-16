@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BattlePokemon, Move, StatusCondition, VolatileStatus } from '../types';
 import { fetchRandomPokemon, getMoveData, calculateDamage, getPokemonList, fetchSpecificPokemon, fetchPokemonByType } from '../services/pokeService';
-import { Loader2, CircleDot, Music, VolumeX, CheckCircle2, ChevronRight, ChevronLeft, Flame, Zap, Search, Sword, Backpack, Users, LogOut, Play } from 'lucide-react';
+import { Loader2, CircleDot, Music, VolumeX, CheckCircle2, ChevronRight, ChevronLeft, Flame, Zap, Search, Sword, Backpack, Users, LogOut, Play, Grid } from 'lucide-react';
 
 interface BattleProps {
   onBack: () => void;
@@ -30,7 +30,7 @@ type BattlePhase =
   | 'NEXT_BATTLE_TRANSITION';
 
 const GYM_LEADERS = [
-  { name: "Brock", type: "rock", sprite: "https://play.pokemonshowdown.com/sprites/trainers/brock.png", bg: "bg-gym-rock", badge: "Boulder Badge", taunt: "My rock hard will crush you, little boy!" },
+  { name: "Brock", type: "rock", sprite: "https://play.pokemonshowdown.com/sprites/trainers/brock.png", bg: "bg-gym-rock", badge: "Boulder Badge", taunt: "My Rock-hard defense will crush you! Don't make me laugh, you're just a kid!" },
   { name: "Misty", type: "water", sprite: "https://play.pokemonshowdown.com/sprites/trainers/misty.png", bg: "bg-gym-water", badge: "Cascade Badge", taunt: "Are you ready to cry? You little baby!" },
   { name: "Lt. Surge", type: "electric", sprite: "https://play.pokemonshowdown.com/sprites/trainers/ltsurge.png", bg: "bg-gym-electric", badge: "Thunder Badge", taunt: "Get out of my face, maggot!" },
   { name: "Erika", type: "grass", sprite: "https://play.pokemonshowdown.com/sprites/trainers/erika.png", bg: "bg-gym-grass", badge: "Rainbow Badge", taunt: "You're not welcome here, loser." },
@@ -59,6 +59,7 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectionPage, setSelectionPage] = useState(1);
   const [selectionSearch, setSelectionSearch] = useState("");
+  const [selectedGen, setSelectedGen] = useState<1 | 2 | 3>(1); // New Gen Selector
   const [viewList, setViewList] = useState<any[]>([]);
 
   // Story Progress
@@ -87,10 +88,16 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
     phaseRef.current = phase;
   }, [phase]);
 
+  // Load List with Generation Filter
   useEffect(() => {
-    const list = getPokemonList(selectionPage, 48, selectionSearch);
+    let startId = 1;
+    let endId = 151;
+    if (selectedGen === 2) { startId = 152; endId = 251; }
+    if (selectedGen === 3) { startId = 252; endId = 386; }
+
+    const list = getPokemonList(selectionPage, 48, selectionSearch, startId, endId);
     setViewList(list);
-  }, [selectionPage, selectionSearch]);
+  }, [selectionPage, selectionSearch, selectedGen]);
 
   useEffect(() => {
     audioRef.current = new Audio(REAL_BATTLE_MUSIC);
@@ -121,6 +128,11 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
     } else {
         if (selectedIds.length < 6) setSelectedIds(prev => [...prev, id]);
     }
+  };
+
+  const handleGenChange = (gen: 1 | 2 | 3) => {
+      setSelectedGen(gen);
+      setSelectionPage(1);
   };
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,7 +204,7 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
 
   useEffect(() => {
       if (phase === 'STORY_INTRO') {
-          const t = setTimeout(() => initBattle(), 4000);
+          const t = setTimeout(() => initBattle(), 6000); // Longer intro
           return () => clearTimeout(t);
       }
   }, [phase]);
@@ -209,7 +221,7 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
   useEffect(() => {
       if (phase === 'TRASH_TALK') {
           const trainer = activeTrainers[currentTrainerIdx];
-          setBattleLog(`${trainer.name}: "${trainer.taunt || "You're going down, wimp!"}"`);
+          setBattleLog(`${trainer.name}: "${trainer.taunt}"`);
           const timer = setTimeout(() => {
               setPhase('SEND_OUT_ENEMY');
           }, 3000);
@@ -451,9 +463,9 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
               enemyMoveName = validMoves[Math.floor(Math.random() * validMoves.length)].name;
           }
       } else {
-          setBattleLog(`${enemyMon.name} unleashes energy!`);
-          updateVolatile(false, eIdx, { charging: undefined, invulnerable: false });
-          await new Promise(r => setTimeout(r, 1000));
+          // It's the turn to unleash the attack
+          // We don't reset here, performMove handles it
+          await new Promise(r => setTimeout(r, 500));
       }
 
       await performMove(false, eIdx, currentPlayerIdx, enemyMoveName!);
@@ -464,17 +476,28 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
       const defender = isPlayerAttacker ? enemyTeam[defenderIdx] : playerTeam[defenderIdx];
       const move = getMoveData(moveName);
 
-      // Decrement PP
-      if (moveName !== 'struggle') updatePP(isPlayerAttacker, attackerIdx, moveName);
+      // Check if we are in the second turn of a charge move
+      const isContinuingCharge = attacker.volatiles.charging === moveName;
 
-      setBattleLog(`${attacker.name} used ${move.name}!`);
-      await new Promise(r => setTimeout(r, 500));
+      // 2-Turn Logic Start (Charge)
+      if (move.flags?.charge && !isContinuingCharge) {
+          // Decrement PP on start of charge
+          if (moveName !== 'struggle') updatePP(isPlayerAttacker, attackerIdx, moveName);
+          
+          let logMsg = `${attacker.name} is charging up!`;
+          if (moveName === 'solar-beam') logMsg = `${attacker.name} took in sunlight!`;
+          if (moveName === 'dig') logMsg = `${attacker.name} burrowed underground!`;
+          if (moveName === 'fly') logMsg = `${attacker.name} flew up high!`;
+          if (moveName === 'hyper-beam') logMsg = `${attacker.name} is gathering energy!`;
 
-      // 2-Turn Logic (Dig/Fly) - If just starting
-      if (move.flags?.charge && !attacker.volatiles.charging) {
-          setBattleLog(`${attacker.name} is charging up!`);
-          updateVolatile(isPlayerAttacker, attackerIdx, { charging: moveName, invulnerable: true });
+          setBattleLog(logMsg);
+          
+          // Only Dig and Fly make you invulnerable
+          const isInvulnerable = moveName === 'dig' || moveName === 'fly';
+          
+          updateVolatile(isPlayerAttacker, attackerIdx, { charging: moveName, invulnerable: isInvulnerable });
           await new Promise(r => setTimeout(r, 1000));
+          
           // End Turn immediately
           if (isPlayerAttacker) {
                executeEnemyTurn(attackerIdx);
@@ -484,9 +507,19 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
           return;
       }
 
+      // If this is a regular move (not continuing charge), decrement PP
+      if (!isContinuingCharge && moveName !== 'struggle') updatePP(isPlayerAttacker, attackerIdx, moveName);
+
+      setBattleLog(`${attacker.name} used ${move.name}!`);
+      await new Promise(r => setTimeout(r, 500));
+
       // Accuracy Check
       if (move.accuracy !== 100 && (Math.random() * 100 > move.accuracy)) {
           setBattleLog("But it missed!");
+          // If we were charging, we still spent the charge.
+          if (isContinuingCharge) {
+              updateVolatile(isPlayerAttacker, attackerIdx, { charging: undefined, invulnerable: false });
+          }
           await new Promise(r => setTimeout(r, 1000));
           if (isPlayerAttacker) executeEnemyTurn(attackerIdx);
           else endTurn(false, defenderIdx);
@@ -553,6 +586,11 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
           }
       }
 
+      // Cleanup Charge Volatile AFTER damage dealing
+      if (isContinuingCharge) {
+           updateVolatile(isPlayerAttacker, attackerIdx, { charging: undefined, invulnerable: false });
+      }
+
       if (defenderNewHp === 0) {
           if (isPlayerAttacker) handleEnemyFaint();
           else handlePlayerFaint(defenderIdx);
@@ -583,8 +621,13 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
       }
 
       if (playerAlive && enemyAlive) {
-          setPhase('COMBAT_MENU');
-          setBattleLog(`What will ${playerTeam[playerIdx].name} do?`);
+          // AUTO-ATTACK CHECK for Dig/Fly/SolarBeam/HyperBeam
+          if (playerTeam[playerIdx].volatiles.charging) {
+              handleAttack(playerTeam[playerIdx].volatiles.charging!);
+          } else {
+              setPhase('COMBAT_MENU');
+              setBattleLog(`What will ${playerTeam[playerIdx].name} do?`);
+          }
       }
   };
 
@@ -628,14 +671,9 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
   };
 
   const handleAttack = async (moveName: string) => {
-      // If we are already charging, we skip checks and go straight to execution
-      if (playerTeam[pIdx].volatiles.charging) {
-           updateVolatile(true, pIdx, { charging: undefined, invulnerable: false });
-           await performMove(true, pIdx, eIdx, playerTeam[pIdx].volatiles.charging!);
-           return;
-      }
-
+      // Direct pass-through if charging; performMove handles logic
       setPhase('COMBAT_ANIM');
+      
       const canMove = await checkCanMove(true, pIdx);
       if (!canMove) {
           executeEnemyTurn(pIdx);
@@ -644,6 +682,9 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
       
       await performMove(true, pIdx, eIdx, moveName);
   };
+
+  // ... (rest of helper functions unchanged) ...
+  // Keep getHpColor, renderTeamStatus, handleImageError
 
   const getHpColor = (current: number, max: number) => {
     const pct = (current / max) * 100;
@@ -686,23 +727,23 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
   const activePlayerMon = playerTeam[pIdx];
   const activeEnemyMon = enemyTeam[eIdx];
 
-  // Return logic phases...
-  // (Paste simplified Phase Logic for brevity)
-  
+  // --- SELECTION PHASE ---
   if (phase === 'SELECTION') {
+      // (Kept selection logic same as provided in history)
       return (
-          <div className="h-screen w-full bg-slate-900 flex flex-col items-center p-4 overflow-hidden">
+          <div className="h-screen w-full bg-slate-900 flex flex-col items-center p-2 sm:p-4 overflow-hidden">
               <div className="max-w-4xl w-full bg-white rounded-lg shadow-xl p-4 flex flex-col h-full border-4 border-slate-600">
+                  {/* ... Selection UI ... */}
                   <div className="flex justify-between items-center mb-4">
-                      <h1 className="text-sm md:text-xl font-bold uppercase truncate">
-                          {isEliteFour ? "Elite 4 Select" : "Story Select"} ({selectedIds.length}/6)
+                      <h1 className="text-xs sm:text-base md:text-xl font-bold uppercase truncate">
+                          Team Select ({selectedIds.length}/6)
                       </h1>
                       <div className="flex items-center gap-2">
                            <div className="relative">
                                <input 
                                   type="text" 
                                   placeholder="ID#..." 
-                                  className="border-2 border-slate-400 rounded px-2 py-1 w-24 text-xs font-mono"
+                                  className="border-2 border-slate-400 rounded px-2 py-1 w-20 sm:w-24 text-xs font-mono"
                                   value={selectionSearch}
                                   onChange={handleSearch}
                                />
@@ -710,13 +751,35 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                            </div>
                       </div>
                   </div>
+
+                  {/* Generation Tabs */}
+                  <div className="flex gap-1 mb-2">
+                      <button 
+                        onClick={() => handleGenChange(1)}
+                        className={`flex-1 py-2 text-xs font-bold border-b-4 ${selectedGen === 1 ? 'border-red-500 bg-red-50 text-red-600' : 'border-transparent bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                      >
+                          Kanto
+                      </button>
+                      <button 
+                        onClick={() => handleGenChange(2)}
+                        className={`flex-1 py-2 text-xs font-bold border-b-4 ${selectedGen === 2 ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-transparent bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                      >
+                          Johto
+                      </button>
+                      <button 
+                        onClick={() => handleGenChange(3)}
+                        className={`flex-1 py-2 text-xs font-bold border-b-4 ${selectedGen === 3 ? 'border-green-500 bg-green-50 text-green-600' : 'border-transparent bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                      >
+                          Hoenn
+                      </button>
+                  </div>
                   
                   <div className="flex-1 overflow-y-auto grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12 gap-2 p-2 bg-slate-100 rounded border-inner">
                       {viewList.map((p) => (
                           <button 
                             key={p.id}
                             onClick={() => handleSelection(p.id)}
-                            className={`flex flex-col items-center justify-center p-1 rounded border-2 transition-all ${selectedIds.includes(p.id) ? 'bg-green-100 border-green-500 scale-95' : 'bg-white border-transparent hover:border-blue-300'}`}
+                            className={`flex flex-col items-center justify-center p-1 rounded border-2 transition-all min-h-[70px] ${selectedIds.includes(p.id) ? 'bg-green-100 border-green-500 scale-95' : 'bg-white border-transparent hover:border-blue-300'}`}
                           >
                               <img src={p.sprite} alt="" className="w-10 h-10 pixel-art" loading="lazy" />
                               <span className="text-[9px] font-mono text-slate-600">{p.name}</span>
@@ -729,16 +792,16 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                       <button 
                          onClick={() => setSelectionPage(p => Math.max(1, p - 1))}
                          disabled={selectionPage === 1}
-                         className="flex items-center gap-1 bg-white border border-slate-400 px-3 py-1 rounded hover:bg-slate-50 disabled:opacity-50 text-xs font-bold"
+                         className="flex items-center gap-1 bg-white border border-slate-400 px-3 py-2 sm:py-1 rounded hover:bg-slate-50 disabled:opacity-50 text-xs font-bold"
                       >
-                         <ChevronLeft className="w-4 h-4" /> Prev
+                         <ChevronLeft className="w-4 h-4" /> <span className="hidden sm:inline">Prev</span>
                       </button>
                       <span className="font-mono text-xs">Page {selectionPage}</span>
                       <button 
                          onClick={() => setSelectionPage(p => p + 1)}
-                         className="flex items-center gap-1 bg-white border border-slate-400 px-3 py-1 rounded hover:bg-slate-50 text-xs font-bold"
+                         className="flex items-center gap-1 bg-white border border-slate-400 px-3 py-2 sm:py-1 rounded hover:bg-slate-50 text-xs font-bold"
                       >
-                         Next <ChevronRight className="w-4 h-4" />
+                         <span className="hidden sm:inline">Next</span> <ChevronRight className="w-4 h-4" />
                       </button>
                   </div>
 
@@ -746,9 +809,9 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                       <button 
                         disabled={selectedIds.length !== 6}
                         onClick={startStory}
-                        className="bg-red-600 disabled:bg-slate-400 text-white font-bold py-3 px-12 rounded uppercase tracking-widest shadow-lg active:translate-y-1 transition-all"
+                        className="w-full sm:w-auto bg-red-600 disabled:bg-slate-400 text-white font-bold py-3 px-12 rounded uppercase tracking-widest shadow-lg active:translate-y-1 transition-all"
                       >
-                          Start Adventure
+                          Start Game
                       </button>
                   </div>
               </div>
@@ -756,10 +819,36 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
       );
   }
 
-  // --- 3D BATTLE RENDER ---
-  // Reusing the same main structure but injecting 3D wrappers
+  // --- STORY INTRO PHASE ---
+  if (phase === 'STORY_INTRO') {
+      return (
+          <div className="h-screen w-full bg-black text-white flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+              <h1 className="text-4xl text-yellow-400 font-bold mb-8 animate-float text-shadow">
+                  {isEliteFour ? "THE ELITE FOUR" : "POKEMON LEAGUE"}
+              </h1>
+              <p className="text-lg leading-10 font-mono mb-8 max-w-2xl">
+                  {isEliteFour ? (
+                      <>
+                        The ultimate challenge awaits.<br/>
+                        Four masters and one Champion.<br/>
+                        There is no turning back.
+                      </>
+                  ) : (
+                      <>
+                        Welcome, young trainer.<br/><br/>
+                        Your goal is to defeat the 8 Gym Leaders of Kanto.<br/>
+                        From the rocks of Pewter City to the ground of Viridian...<br/>
+                        Only then can you challenge the Elite Four.<br/><br/>
+                        Are you ready to become the Champion?
+                      </>
+                  )}
+              </p>
+              <Loader2 className="animate-spin w-12 h-12 text-slate-500" />
+          </div>
+      );
+  }
 
-  if (phase === 'STORY_INTRO' || phase === 'LOADING') {
+  if (phase === 'LOADING') {
       return <div className="flex h-screen w-full items-center justify-center text-white bg-slate-900"><Loader2 className="animate-spin h-10 w-10" /></div>;
   }
 
@@ -771,184 +860,188 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                  className="bg-red-600 hover:bg-red-700 text-white font-bold py-6 px-12 rounded-lg text-xl uppercase shadow-2xl border-4 border-red-800 animate-pulse flex items-center gap-4"
               >
                   <Play className="w-8 h-8 fill-current" />
-                  Start Battle VS {activeTrainers[currentTrainerIdx].name}
+                  VS {activeTrainers[currentTrainerIdx].name}
               </button>
           </div>
       );
   }
 
+  // --- BATTLE UI ---
   return (
-    <div className="relative h-screen w-full bg-slate-900 flex flex-col items-center justify-center p-2 sm:p-4">
-      <button onClick={toggleMute} className="absolute top-4 right-4 z-50 text-white bg-slate-800 p-2 rounded-full border border-slate-600 hover:bg-slate-700">
+    <div className="relative h-screen w-full bg-slate-900 flex flex-col items-center justify-center p-1 sm:p-4">
+      <button onClick={toggleMute} className="absolute top-2 right-2 z-50 text-white bg-slate-800 p-2 rounded-full border border-slate-600 hover:bg-slate-700">
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Music className="w-5 h-5 animate-pulse" />}
       </button>
 
-      <div className="w-full max-w-4xl bg-white rounded-lg shadow-2xl overflow-hidden border-[12px] border-[#2f3237]">
-        {/* 3D SCENE WRAPPER */}
-        <div className={`relative h-[250px] sm:h-[320px] md:h-[380px] overflow-hidden scene-3d ${activeTrainers[currentTrainerIdx].bg}`}>
-            
-            {/* FLOOR PLANE (ROTATED) */}
-            <div className="absolute inset-[-50%] w-[200%] h-[200%] arena-floor bg-inherit z-0 pointer-events-none">
-                 <div className="w-full h-full bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.1)_50%)] bg-[length:40px_40px] opacity-30"></div>
-            </div>
+      <div className="w-full max-w-4xl bg-white rounded-lg shadow-2xl overflow-hidden border-[4px] sm:border-[12px] border-[#2f3237] flex flex-col">
+        {/* 3D SCENE WRAPPER - RESPONSIVE */}
+        <div className={`scene-container ${activeTrainers[currentTrainerIdx].bg}`}>
+            <div className="scene-3d">
+                
+                {/* FLOOR PLANE (ROTATED) */}
+                <div className="absolute inset-[-50%] w-[200%] h-[200%] arena-floor bg-inherit z-0 pointer-events-none">
+                     <div className="w-full h-full bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.1)_50%)] bg-[length:40px_40px] opacity-30"></div>
+                </div>
 
-            {/* CONTENT (Vertical Billboarding) */}
-            <div className="absolute inset-0 z-10">
-                {(phase === 'TRAINER_INTRO' || phase === 'TRASH_TALK') && (
-                    <>
-                        <img 
-                            src={activeTrainers[currentTrainerIdx].sprite} 
-                            className="absolute top-10 right-10 w-48 h-48 md:w-64 md:h-64 object-contain pixel-art animate-slide-in-right z-10 sprite-stand"
-                            alt="Rival"
-                        />
-                        <img 
-                            src={PLAYER_SPRITE} 
-                            className="absolute bottom-4 left-10 w-48 h-48 md:w-64 md:h-64 object-contain pixel-art animate-slide-in-left z-10 sprite-stand"
-                            alt="Red"
-                        />
-                        {phase === 'TRASH_TALK' && (
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-30 bg-white border-4 border-black p-4 rounded-xl shadow-xl w-3/4 text-center">
-                                <p className="font-bold font-mono text-sm md:text-lg uppercase">
-                                    "{activeTrainers[currentTrainerIdx].taunt || "I will crush you!"}"
-                                </p>
+                {/* CONTENT (Vertical Billboarding) */}
+                <div className="absolute inset-0 z-10">
+                    {(phase === 'TRAINER_INTRO' || phase === 'TRASH_TALK') && (
+                        <>
+                            <img 
+                                src={activeTrainers[currentTrainerIdx].sprite} 
+                                className="absolute top-[10%] right-[10%] w-[35%] h-[50%] object-contain pixel-art animate-slide-in-right z-10 sprite-stand"
+                                alt="Rival"
+                            />
+                            <img 
+                                src={PLAYER_SPRITE} 
+                                className="absolute bottom-[5%] left-[10%] w-[35%] h-[50%] object-contain pixel-art animate-slide-in-left z-10 sprite-stand"
+                                alt="Red"
+                            />
+                            {phase === 'TRASH_TALK' && (
+                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-30 bg-white border-4 border-black p-4 rounded-xl shadow-xl w-3/4 text-center">
+                                    <p className="font-bold font-mono text-xs sm:text-base uppercase">
+                                        "{activeTrainers[currentTrainerIdx].taunt}"
+                                    </p>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* Battle Sprites & HUDs (Standard Battle) */}
+                    {(phase !== 'TRAINER_INTRO' && phase !== 'TRASH_TALK') && (
+                        <>
+                            {/* Enemy Sprite & FX */}
+                            <div className={`absolute top-[15%] right-[15%] z-10 sprite-stand ${phase === 'SEND_OUT_ENEMY' ? 'animate-slide-in-right' : ''}`}>
+                                <div className="absolute -bottom-4 -left-4 w-32 h-10 bg-black/40 rounded-[100%] blur-md scale-150 transform rotateX(60deg)"></div>
+                                
+                                {targetAnim === 'enemy' && moveTypeAnim && (
+                                    <div className={`
+                                        ${moveTypeAnim === 'fire' ? 'fx-fire' : ''}
+                                        ${moveTypeAnim === 'water' ? 'fx-water' : ''}
+                                        ${moveTypeAnim === 'electric' ? 'fx-electric' : ''}
+                                        ${moveTypeAnim === 'grass' ? 'fx-grass' : ''}
+                                        ${moveTypeAnim === 'poison' ? 'fx-poison' : ''}
+                                        ${!['fire','water','electric','grass','poison'].includes(moveTypeAnim) ? 'fx-normal' : ''}
+                                    `}></div>
+                                )}
+
+                                <img 
+                                    key={`enemy-${activeEnemyMon.id}`} 
+                                    src={activeEnemyMon.sprites.front_default} 
+                                    id="enemy-sprite"
+                                    style={getScaleStyle(activeEnemyMon.height)}
+                                    onError={(e) => handleImageError(e, activeEnemyMon.id, 'front')}
+                                    className={`relative w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 pixel-art object-contain transition-all duration-300 origin-bottom 
+                                        ${phase === 'VICTORY' || phase === 'NEXT_BATTLE_TRANSITION' ? 'opacity-0' : activeEnemyMon.volatiles.invulnerable ? 'opacity-50 blur-sm' : 'opacity-100'}
+                                        ${damageAnim === 'enemy' ? 'animate-shake' : ''}
+                                    `}
+                                />
                             </div>
-                        )}
-                    </>
-                )}
 
-                {(phase !== 'TRAINER_INTRO' && phase !== 'TRASH_TALK') && (
-                    <>
-                        {/* Enemy Sprite & FX */}
-                        <div className={`absolute top-16 right-16 z-10 sprite-stand ${phase === 'SEND_OUT_ENEMY' ? 'animate-slide-in-right' : ''}`}>
-                            <div className="absolute -bottom-4 -left-4 w-32 h-10 bg-black/40 rounded-[100%] blur-md scale-150 transform rotateX(60deg)"></div>
-                            
-                            {targetAnim === 'enemy' && moveTypeAnim && (
-                                <div className={`
-                                    ${moveTypeAnim === 'fire' ? 'fx-fire' : ''}
-                                    ${moveTypeAnim === 'water' ? 'fx-water' : ''}
-                                    ${moveTypeAnim === 'electric' ? 'fx-electric' : ''}
-                                    ${moveTypeAnim === 'grass' ? 'fx-grass' : ''}
-                                    ${moveTypeAnim === 'poison' ? 'fx-poison' : ''}
-                                    ${!['fire','water','electric','grass','poison'].includes(moveTypeAnim) ? 'fx-normal' : ''}
-                                `}></div>
+                            {/* Player Sprite & FX */}
+                            <div className={`absolute bottom-[5%] left-[15%] z-10 sprite-stand ${phase === 'SEND_OUT_PLAYER' ? 'animate-slide-in-left' : ''}`}>
+                                 <div className="absolute -bottom-4 -left-4 w-40 h-12 bg-black/40 rounded-[100%] blur-md scale-150 transform rotateX(60deg)"></div>
+
+                                 {targetAnim === 'player' && moveTypeAnim && (
+                                     <div className={`
+                                        ${moveTypeAnim === 'fire' ? 'fx-fire' : ''}
+                                        ${moveTypeAnim === 'water' ? 'fx-water' : ''}
+                                        ${moveTypeAnim === 'electric' ? 'fx-electric' : ''}
+                                        ${moveTypeAnim === 'grass' ? 'fx-grass' : ''}
+                                        ${moveTypeAnim === 'poison' ? 'fx-poison' : ''}
+                                        ${!['fire','water','electric','grass','poison'].includes(moveTypeAnim) ? 'fx-normal' : ''}
+                                     `}></div>
+                                 )}
+
+                                <img 
+                                    key={`player-${activePlayerMon.id}`} 
+                                    src={activePlayerMon.sprites.back_default} 
+                                    id="player-sprite"
+                                    style={getScaleStyle(activePlayerMon.height)}
+                                    onError={(e) => handleImageError(e, activePlayerMon.id, 'back')}
+                                    className={`relative w-28 h-28 sm:w-40 sm:h-40 md:w-64 md:h-64 pixel-art object-contain transition-all duration-300 origin-bottom
+                                        ${phase === 'DEFEAT' ? 'opacity-0' : activePlayerMon.volatiles.invulnerable ? 'opacity-50 blur-sm' : 'opacity-100'} 
+                                        ${animating ? 'translate-x-6' : ''}
+                                        ${damageAnim === 'player' ? 'animate-shake' : ''}
+                                    `}
+                                />
+                            </div>
+
+                            {/* Enemy HUD */}
+                            {phase !== 'VICTORY' && phase !== 'NEXT_BATTLE_TRANSITION' && (
+                                <div className="absolute top-4 left-4 z-20 w-[160px] sm:w-[240px] animate-slide-in-left">
+                                    <div className="bg-[#f8f8d8] border-[3px] border-[#506860] rounded-tl-lg rounded-br-lg p-1 shadow-lg relative">
+                                        {renderTeamStatus(enemyTeam, false)}
+                                        <div className="flex justify-between items-baseline px-2">
+                                            <span className="font-bold text-[10px] sm:text-sm uppercase tracking-tighter text-[#404040]">
+                                                {activeEnemyMon.name}
+                                            </span>
+                                            <span className="font-bold text-[10px] sm:text-sm text-[#404040]">Lv{activeEnemyMon.level}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 mt-1 px-2">
+                                            <div className="text-[8px] sm:text-[10px] font-bold text-[#e08030] bg-[#404040] px-1 rounded-sm">HP</div>
+                                            <div className="flex-1 h-2 sm:h-3 bg-[#404040] rounded-full p-[2px]">
+                                                <div 
+                                                    className={`h-full rounded-full transition-all duration-500 ${getHpColor(activeEnemyMon.currentHp, activeEnemyMon.maxHp)}`}
+                                                    style={{ width: `${(activeEnemyMon.currentHp / activeEnemyMon.maxHp) * 100}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                        <div className="absolute -bottom-4 left-0 flex gap-1">
+                                             {activeEnemyMon.status === 'burn' && <div className="bg-[#f08030] text-white text-[8px] font-bold px-1 rounded uppercase">BRN</div>}
+                                             {activeEnemyMon.status === 'paralysis' && <div className="bg-[#f8d030] text-[#806010] text-[8px] font-bold px-1 rounded uppercase">PAR</div>}
+                                             {activeEnemyMon.status === 'sleep' && <div className="bg-[#8c888c] text-white text-[8px] font-bold px-1 rounded uppercase">SLP</div>}
+                                             {activeEnemyMon.status === 'poison' && <div className="bg-[#a040a0] text-white text-[8px] font-bold px-1 rounded uppercase">PSN</div>}
+                                             {activeEnemyMon.status === 'freeze' && <div className="bg-[#98d8d8] text-white text-[8px] font-bold px-1 rounded uppercase">FRZ</div>}
+                                        </div>
+                                    </div>
+                                </div>
                             )}
 
-                            <img 
-                                key={`enemy-${activeEnemyMon.id}`} 
-                                src={activeEnemyMon.sprites.front_default} 
-                                id="enemy-sprite"
-                                style={getScaleStyle(activeEnemyMon.height)}
-                                onError={(e) => handleImageError(e, activeEnemyMon.id, 'front')}
-                                className={`relative w-32 h-32 md:w-48 md:h-48 pixel-art object-contain transition-all duration-300 origin-bottom 
-                                    ${phase === 'VICTORY' || phase === 'NEXT_BATTLE_TRANSITION' ? 'opacity-0' : activeEnemyMon.volatiles.invulnerable ? 'opacity-50 blur-sm' : 'opacity-100'}
-                                    ${damageAnim === 'enemy' ? 'animate-shake' : ''}
-                                `}
-                            />
-                        </div>
-
-                        {/* Player Sprite & FX */}
-                        <div className={`absolute bottom-8 left-16 z-10 sprite-stand ${phase === 'SEND_OUT_PLAYER' ? 'animate-slide-in-left' : ''}`}>
-                             <div className="absolute -bottom-4 -left-4 w-40 h-12 bg-black/40 rounded-[100%] blur-md scale-150 transform rotateX(60deg)"></div>
-
-                             {targetAnim === 'player' && moveTypeAnim && (
-                                 <div className={`
-                                    ${moveTypeAnim === 'fire' ? 'fx-fire' : ''}
-                                    ${moveTypeAnim === 'water' ? 'fx-water' : ''}
-                                    ${moveTypeAnim === 'electric' ? 'fx-electric' : ''}
-                                    ${moveTypeAnim === 'grass' ? 'fx-grass' : ''}
-                                    ${moveTypeAnim === 'poison' ? 'fx-poison' : ''}
-                                    ${!['fire','water','electric','grass','poison'].includes(moveTypeAnim) ? 'fx-normal' : ''}
-                                 `}></div>
-                             )}
-
-                            <img 
-                                key={`player-${activePlayerMon.id}`} 
-                                src={activePlayerMon.sprites.back_default} 
-                                id="player-sprite"
-                                style={getScaleStyle(activePlayerMon.height)}
-                                onError={(e) => handleImageError(e, activePlayerMon.id, 'back')}
-                                className={`relative w-40 h-40 md:w-64 md:h-64 pixel-art object-contain transition-all duration-300 origin-bottom
-                                    ${phase === 'DEFEAT' ? 'opacity-0' : activePlayerMon.volatiles.invulnerable ? 'opacity-50 blur-sm' : 'opacity-100'} 
-                                    ${animating ? 'translate-x-6' : ''}
-                                    ${damageAnim === 'player' ? 'animate-shake' : ''}
-                                `}
-                            />
-                        </div>
-
-                        {/* Enemy HUD */}
-                        {phase !== 'VICTORY' && phase !== 'NEXT_BATTLE_TRANSITION' && (
-                            <div className="absolute top-6 left-4 z-20 w-[240px] animate-slide-in-left">
-                                <div className="bg-[#f8f8d8] border-[3px] border-[#506860] rounded-tl-lg rounded-br-lg p-1 shadow-lg relative">
-                                    {renderTeamStatus(enemyTeam, false)}
-                                    <div className="flex justify-between items-baseline px-2">
-                                        <span className="font-bold text-xs md:text-sm uppercase tracking-tighter text-[#404040]">
-                                            {activeEnemyMon.name}
-                                        </span>
-                                        <span className="font-bold text-xs md:text-sm text-[#404040]">Lv{activeEnemyMon.level}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 mt-1 px-2">
-                                        <div className="text-[10px] font-bold text-[#e08030] bg-[#404040] px-1 rounded-sm">HP</div>
-                                        <div className="flex-1 h-3 bg-[#404040] rounded-full p-[2px]">
-                                            <div 
-                                                className={`h-full rounded-full transition-all duration-500 ${getHpColor(activeEnemyMon.currentHp, activeEnemyMon.maxHp)}`}
-                                                style={{ width: `${(activeEnemyMon.currentHp / activeEnemyMon.maxHp) * 100}%` }}
-                                            ></div>
+                            {/* Player HUD */}
+                            {phase !== 'DEFEAT' && phase !== 'SEND_OUT_ENEMY' && (
+                                <div className="absolute bottom-8 right-4 z-20 w-[180px] sm:w-[260px] animate-slide-in-right">
+                                     <div className="bg-[#f8f8d8] border-[3px] border-[#506860] rounded-tl-lg rounded-br-lg p-2 shadow-lg relative">
+                                        {renderTeamStatus(playerTeam, true)}
+                                        <div className="flex justify-between items-baseline px-2">
+                                            <span className="font-bold text-[10px] sm:text-sm uppercase tracking-tighter text-[#404040]">
+                                                {activePlayerMon.name}
+                                            </span>
+                                            <span className="font-bold text-[10px] sm:text-sm text-[#404040]">Lv{activePlayerMon.level}</span>
                                         </div>
-                                    </div>
-                                    <div className="absolute -bottom-4 left-0 flex gap-1">
-                                         {activeEnemyMon.status === 'burn' && <div className="bg-[#f08030] text-white text-[8px] font-bold px-1 rounded uppercase">BRN</div>}
-                                         {activeEnemyMon.status === 'paralysis' && <div className="bg-[#f8d030] text-[#806010] text-[8px] font-bold px-1 rounded uppercase">PAR</div>}
-                                         {activeEnemyMon.status === 'sleep' && <div className="bg-[#8c888c] text-white text-[8px] font-bold px-1 rounded uppercase">SLP</div>}
-                                         {activeEnemyMon.status === 'poison' && <div className="bg-[#a040a0] text-white text-[8px] font-bold px-1 rounded uppercase">PSN</div>}
-                                         {activeEnemyMon.status === 'freeze' && <div className="bg-[#98d8d8] text-white text-[8px] font-bold px-1 rounded uppercase">FRZ</div>}
+                                        <div className="flex items-center gap-1 mt-1 px-2">
+                                            <div className="text-[8px] sm:text-[10px] font-bold text-[#e08030] bg-[#404040] px-1 rounded-sm">HP</div>
+                                            <div className="flex-1 h-2 sm:h-3 bg-[#404040] rounded-full p-[2px]">
+                                                <div 
+                                                    className={`h-full rounded-full transition-all duration-500 ${getHpColor(activePlayerMon.currentHp, activePlayerMon.maxHp)}`}
+                                                    style={{ width: `${(activePlayerMon.currentHp / activePlayerMon.maxHp) * 100}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right px-2 text-[8px] sm:text-[10px] font-bold text-[#404040] mt-1 font-mono tracking-widest shadow-white drop-shadow-sm">
+                                            {activePlayerMon.currentHp}/ {activePlayerMon.maxHp}
+                                        </div>
+                                        <div className="absolute -top-4 left-0 flex gap-1">
+                                             {activePlayerMon.status === 'burn' && <div className="bg-[#f08030] text-white text-[8px] font-bold px-1 rounded uppercase">BRN</div>}
+                                             {activePlayerMon.status === 'paralysis' && <div className="bg-[#f8d030] text-[#806010] text-[8px] font-bold px-1 rounded uppercase">PAR</div>}
+                                             {activePlayerMon.status === 'sleep' && <div className="bg-[#8c888c] text-white text-[8px] font-bold px-1 rounded uppercase">SLP</div>}
+                                             {activePlayerMon.status === 'poison' && <div className="bg-[#a040a0] text-white text-[8px] font-bold px-1 rounded uppercase">PSN</div>}
+                                             {activePlayerMon.status === 'freeze' && <div className="bg-[#98d8d8] text-white text-[8px] font-bold px-1 rounded uppercase">FRZ</div>}
+                                        </div>
+                                        <div className="w-full h-1 bg-[#40a0c8] mt-1 border-t border-[#f8f8d8]"></div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Player HUD */}
-                        {phase !== 'DEFEAT' && phase !== 'SEND_OUT_ENEMY' && (
-                            <div className="absolute bottom-8 right-4 z-20 w-[260px] animate-slide-in-right">
-                                 <div className="bg-[#f8f8d8] border-[3px] border-[#506860] rounded-tl-lg rounded-br-lg p-2 shadow-lg relative">
-                                    {renderTeamStatus(playerTeam, true)}
-                                    <div className="flex justify-between items-baseline px-2">
-                                        <span className="font-bold text-xs md:text-sm uppercase tracking-tighter text-[#404040]">
-                                            {activePlayerMon.name}
-                                        </span>
-                                        <span className="font-bold text-xs md:text-sm text-[#404040]">Lv{activePlayerMon.level}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 mt-1 px-2">
-                                        <div className="text-[10px] font-bold text-[#e08030] bg-[#404040] px-1 rounded-sm">HP</div>
-                                        <div className="flex-1 h-3 bg-[#404040] rounded-full p-[2px]">
-                                            <div 
-                                                className={`h-full rounded-full transition-all duration-500 ${getHpColor(activePlayerMon.currentHp, activePlayerMon.maxHp)}`}
-                                                style={{ width: `${(activePlayerMon.currentHp / activePlayerMon.maxHp) * 100}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right px-2 text-[10px] font-bold text-[#404040] mt-1 font-mono tracking-widest shadow-white drop-shadow-sm">
-                                        {activePlayerMon.currentHp}/ {activePlayerMon.maxHp}
-                                    </div>
-                                    <div className="absolute -top-4 left-0 flex gap-1">
-                                         {activePlayerMon.status === 'burn' && <div className="bg-[#f08030] text-white text-[8px] font-bold px-1 rounded uppercase">BRN</div>}
-                                         {activePlayerMon.status === 'paralysis' && <div className="bg-[#f8d030] text-[#806010] text-[8px] font-bold px-1 rounded uppercase">PAR</div>}
-                                         {activePlayerMon.status === 'sleep' && <div className="bg-[#8c888c] text-white text-[8px] font-bold px-1 rounded uppercase">SLP</div>}
-                                         {activePlayerMon.status === 'poison' && <div className="bg-[#a040a0] text-white text-[8px] font-bold px-1 rounded uppercase">PSN</div>}
-                                         {activePlayerMon.status === 'freeze' && <div className="bg-[#98d8d8] text-white text-[8px] font-bold px-1 rounded uppercase">FRZ</div>}
-                                    </div>
-                                    <div className="w-full h-1 bg-[#40a0c8] mt-1 border-t border-[#f8f8d8]"></div>
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )}
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
         </div>
 
-        <div className="h-40 bg-[#2f3237] flex text-white font-mono relative">
+        <div className="flex-1 min-h-[140px] bg-[#2f3237] flex text-white font-mono relative">
            <div className="flex-1 border-[6px] border-[#a0a0a8] rounded m-2 bg-white relative">
                <div className="absolute inset-[2px] border-[2px] border-[#505058] p-4 bg-white/10">
-                    <p className="text-[#383838] text-sm md:text-base font-bold leading-relaxed whitespace-pre-line text-shadow-none">
+                    <p className="text-[#383838] text-xs sm:text-base font-bold leading-relaxed whitespace-pre-line text-shadow-none">
                         {battleLog}
                     </p>
                </div>
@@ -962,12 +1055,12 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                                 key={moveInstance.name}
                                 onClick={() => handleAttack(moveInstance.name)}
                                 disabled={moveInstance.currentPp === 0}
-                                className={`border border-slate-300 hover:bg-[#f8f8d8] hover:border-[#f08030] text-[#383838] font-bold text-xs uppercase rounded flex flex-col items-center justify-center group ${moveInstance.currentPp === 0 ? 'opacity-50 cursor-not-allowed bg-slate-200' : ''}`}
+                                className={`border border-slate-300 hover:bg-[#f8f8d8] hover:border-[#f08030] text-[#383838] font-bold text-xs uppercase rounded flex flex-col items-center justify-center group active:bg-[#f08030] active:text-white ${moveInstance.currentPp === 0 ? 'opacity-50 cursor-not-allowed bg-slate-200' : ''}`}
                             >
                                 <span>{moveInstance.name}</span>
                                 <div className="flex justify-between w-full px-2 mt-1">
-                                    <span className="text-[9px] text-slate-400 group-hover:text-slate-600">{m.type}</span>
-                                    <span className={`text-[9px] ${moveInstance.currentPp === 0 ? 'text-red-500' : 'text-slate-500'}`}>
+                                    <span className="text-[8px] sm:text-[9px] text-slate-400 group-hover:text-slate-600">{m.type}</span>
+                                    <span className={`text-[8px] sm:text-[9px] ${moveInstance.currentPp === 0 ? 'text-red-500' : 'text-slate-500'}`}>
                                         PP {moveInstance.currentPp}/{moveInstance.maxPp}
                                     </span>
                                 </div>
@@ -989,28 +1082,28 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                    <div className="absolute inset-0 border-[2px] border-[#6868d8] bg-white grid grid-cols-2">
                         <button 
                             onClick={() => setPhase('FIGHT_MENU')}
-                            className="hover:bg-[#f8f8d8] flex flex-col items-center justify-center text-[#383838] font-bold text-xs border-r border-b border-slate-200"
+                            className="hover:bg-[#f8f8d8] active:bg-blue-200 flex flex-col items-center justify-center text-[#383838] font-bold text-[10px] sm:text-xs border-r border-b border-slate-200"
                         >
                             <Sword className="w-4 h-4 mb-1" />
                             FIGHT
                         </button>
                         <button 
                             disabled 
-                            className="hover:bg-[#f8f8d8] flex flex-col items-center justify-center text-[#a0a0a0] font-bold text-xs border-b border-slate-200"
+                            className="hover:bg-[#f8f8d8] flex flex-col items-center justify-center text-[#a0a0a0] font-bold text-[10px] sm:text-xs border-b border-slate-200"
                         >
                             <Backpack className="w-4 h-4 mb-1" />
                             BAG
                         </button>
                         <button 
                             onClick={() => setPhase('SWITCH_MENU')}
-                            className="hover:bg-[#f8f8d8] flex flex-col items-center justify-center text-[#383838] font-bold text-xs border-r border-slate-200"
+                            className="hover:bg-[#f8f8d8] active:bg-blue-200 flex flex-col items-center justify-center text-[#383838] font-bold text-[10px] sm:text-xs border-r border-slate-200"
                         >
                             <Users className="w-4 h-4 mb-1" />
                             PKMN
                         </button>
                         <button 
                             onClick={onBack}
-                            className="hover:bg-[#f8f8d8] flex flex-col items-center justify-center text-[#383838] font-bold text-xs"
+                            className="hover:bg-[#f8f8d8] active:bg-red-200 flex flex-col items-center justify-center text-[#383838] font-bold text-[10px] sm:text-xs"
                         >
                             <LogOut className="w-4 h-4 mb-1" />
                             RUN
@@ -1031,8 +1124,8 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                                className={`p-1 rounded border flex items-center gap-2 ${p.currentHp <= 0 ? 'bg-red-50 opacity-50' : i === pIdx ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-slate-50'}`}
                            >
                                <img src={p.sprites.front_default} className="w-6 h-6 pixel-art" />
-                               <div className="text-left w-full">
-                                   <div className="text-[10px] font-bold text-[#383838]">{p.name}</div>
+                               <div className="text-left w-full overflow-hidden">
+                                   <div className="text-[9px] sm:text-[10px] font-bold text-[#383838] truncate">{p.name}</div>
                                    <div className="w-full h-1 bg-slate-200 rounded overflow-hidden">
                                        <div className={`h-full ${getHpColor(p.currentHp, p.maxHp)}`} style={{width: `${(p.currentHp/p.maxHp)*100}%`}}></div>
                                    </div>
@@ -1041,7 +1134,7 @@ export const Battle: React.FC<BattleProps> = ({ onBack, isEliteFour, onComplete 
                        ))}
                    </div>
                    {phase === 'SWITCH_MENU' && (
-                       <button onClick={() => setPhase('COMBAT_MENU')} className="mt-2 bg-slate-200 text-slate-600 text-xs font-bold py-1 rounded">Cancel</button>
+                       <button onClick={() => setPhase('COMBAT_MENU')} className="mt-2 bg-slate-200 text-slate-600 text-xs font-bold py-2 rounded active:bg-slate-300">Cancel</button>
                    )}
                </div>
            )}
