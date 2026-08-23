@@ -1,13 +1,255 @@
-import React,{useCallback,useEffect,useMemo,useRef,useState}from'react';
-type Screen='menu'|'battle'|'lab'|'help';type StatBlock={hp:number;attack:number;defense:number;specialAttack:number;specialDefense:number;speed:number};type PokemonDef={id:number;name:string;types:string[];stats:StatBlock;sprite:string;role:'ranged'|'melee'|'tank'|'generator';cost:number;cooldown:number;maxHp:number;damage:number;range:number;attackEvery:number;moveSpeed:number;attackType:string;power:number};type Unit=PokemonDef&{uid:number;lane:number;col:number;x:number;y:number;hp:number;cooldownLeft:number;auraTimer:number;flash:number};type Enemy=PokemonDef&{uid:number;lane:number;x:number;y:number;hp:number;maxHpScaled:number;attackClock:number;wave:number;flash:number;elite:boolean};type Orb={uid:number;x:number;y:number;value:number;ttl:number;vy:number};type Projectile={uid:number;x:number;y:number;lane:number;vx:number;damage:number;type:string;target:number;ttl:number};type FloatText={uid:number;x:number;y:number;text:string;ttl:number;kind:'damage'|'good'|'bad'};
-const API='https://pokeapi.co/api/v2/pokemon/',ART=(id:number)=>`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`,DEFENDER_IDS=[1,25,7,4,74,63,133,152,258,390,387,143],ENEMY_IDS=[19,41,27,56,66,81,92,109,111,125,215,246,143,94];
-const fallback:Record<number,{name:string;types:string[];stats:StatBlock}>={1:{name:'Bulbasaur',types:['grass','poison'],stats:{hp:45,attack:49,defense:49,specialAttack:65,specialDefense:65,speed:45}},4:{name:'Charmander',types:['fire'],stats:{hp:39,attack:52,defense:43,specialAttack:60,specialDefense:50,speed:65}},7:{name:'Squirtle',types:['water'],stats:{hp:44,attack:48,defense:65,specialAttack:50,specialDefense:64,speed:43}},19:{name:'Rattata',types:['normal'],stats:{hp:30,attack:56,defense:35,specialAttack:25,specialDefense:35,speed:72}},25:{name:'Pikachu',types:['electric'],stats:{hp:35,attack:55,defense:40,specialAttack:50,specialDefense:50,speed:90}},27:{name:'Sandshrew',types:['ground'],stats:{hp:50,attack:75,defense:85,specialAttack:20,specialDefense:30,speed:40}},41:{name:'Zubat',types:['poison','flying'],stats:{hp:40,attack:45,defense:35,specialAttack:30,specialDefense:40,speed:55}},56:{name:'Mankey',types:['fighting'],stats:{hp:40,attack:80,defense:35,specialAttack:35,specialDefense:45,speed:70}},63:{name:'Abra',types:['psychic'],stats:{hp:25,attack:20,defense:15,specialAttack:105,specialDefense:55,speed:90}},66:{name:'Machop',types:['fighting'],stats:{hp:70,attack:80,defense:50,specialAttack:35,specialDefense:35,speed:35}},74:{name:'Geodude',types:['rock','ground'],stats:{hp:40,attack:80,defense:100,specialAttack:30,specialDefense:30,speed:20}},81:{name:'Magnemite',types:['electric','steel'],stats:{hp:25,attack:35,defense:70,specialAttack:95,specialDefense:55,speed:45}},92:{name:'Gastly',types:['ghost','poison'],stats:{hp:30,attack:35,defense:30,specialAttack:100,specialDefense:35,speed:80}},94:{name:'Gengar',types:['ghost','poison'],stats:{hp:60,attack:65,defense:60,specialAttack:130,specialDefense:75,speed:110}},109:{name:'Koffing',types:['poison'],stats:{hp:40,attack:65,defense:95,specialAttack:60,specialDefense:45,speed:35}},111:{name:'Rhyhorn',types:['ground','rock'],stats:{hp:80,attack:85,defense:95,specialAttack:30,specialDefense:30,speed:25}},125:{name:'Electabuzz',types:['electric'],stats:{hp:65,attack:83,defense:57,specialAttack:95,specialDefense:85,speed:105}},133:{name:'Eevee',types:['normal'],stats:{hp:55,attack:55,defense:50,specialAttack:45,specialDefense:65,speed:55}},143:{name:'Snorlax',types:['normal'],stats:{hp:160,attack:110,defense:65,specialAttack:65,specialDefense:110,speed:30}},152:{name:'Chikorita',types:['grass'],stats:{hp:45,attack:49,defense:65,specialAttack:49,specialDefense:65,speed:45}},215:{name:'Sneasel',types:['dark','ice'],stats:{hp:55,attack:95,defense:55,specialAttack:35,specialDefense:75,speed:115}},246:{name:'Larvitar',types:['rock','ground'],stats:{hp:50,attack:64,defense:50,specialAttack:45,specialDefense:50,speed:41}},258:{name:'Mudkip',types:['water'],stats:{hp:50,attack:70,defense:50,specialAttack:50,specialDefense:50,speed:40}},387:{name:'Turtwig',types:['grass'],stats:{hp:55,attack:68,defense:64,specialAttack:45,specialDefense:55,speed:31}},390:{name:'Chimchar',types:['fire'],stats:{hp:44,attack:58,defense:44,specialAttack:58,specialDefense:44,speed:61}}};
-const chart:Record<string,Record<string,number>>={normal:{rock:.5,ghost:0,steel:.5},fire:{fire:.5,water:.5,grass:2,ice:2,bug:2,rock:.5,dragon:.5,steel:2},water:{fire:2,water:.5,grass:.5,ground:2,rock:2,dragon:.5},electric:{water:2,electric:.5,grass:.5,ground:0,flying:2,dragon:.5},grass:{fire:.5,water:2,grass:.5,poison:.5,ground:2,flying:.5,bug:.5,rock:2,dragon:.5,steel:.5},ice:{fire:.5,water:.5,grass:2,ice:.5,ground:2,flying:2,dragon:2,steel:.5},fighting:{normal:2,ice:2,poison:.5,flying:.5,psychic:.5,bug:.5,rock:2,ghost:0,dark:2,steel:2,fairy:.5},poison:{grass:2,poison:.5,ground:.5,rock:.5,ghost:.5,steel:0,fairy:2},ground:{fire:2,electric:2,grass:.5,poison:2,flying:0,bug:.5,rock:2,steel:2},flying:{electric:.5,grass:2,fighting:2,bug:2,rock:.5,steel:.5},psychic:{fighting:2,poison:2,psychic:.5,dark:0,steel:.5},bug:{fire:.5,grass:2,fighting:.5,poison:.5,flying:.5,psychic:2,ghost:.5,dark:2,steel:.5,fairy:.5},rock:{fire:2,ice:2,fighting:.5,ground:.5,flying:2,bug:2,steel:.5},ghost:{normal:0,psychic:2,ghost:2,dark:.5},dragon:{dragon:2,steel:.5,fairy:0},dark:{fighting:.5,psychic:2,ghost:2,dark:.5,fairy:.5},steel:{fire:.5,water:.5,electric:.5,ice:2,rock:2,steel:.5,fairy:2},fairy:{fire:.5,fighting:2,poison:.5,dragon:2,dark:2,steel:.5}};const eff=(atk:string,types:string[])=>types.reduce((m,t)=>m*(chart[atk]?.[t]??1),1),clamp=(n:number,a:number,b:number)=>Math.max(a,Math.min(b,n)),cap=(s:string)=>s.charAt(0).toUpperCase()+s.slice(1);
-function modelPokemon(id:number,raw?:any):PokemonDef{const fb=fallback[id]||{name:`Pokemon ${id}`,types:['normal'],stats:{hp:50,attack:50,defense:50,specialAttack:50,specialDefense:50,speed:50}},get=(name:string,key:keyof StatBlock)=>raw?.stats?.find((x:any)=>x.stat.name===name)?.base_stat??fb.stats[key],stats:StatBlock={hp:get('hp','hp'),attack:get('attack','attack'),defense:get('defense','defense'),specialAttack:get('special-attack','specialAttack'),specialDefense:get('special-defense','specialDefense'),speed:get('speed','speed')},types=(raw?.types?.sort((a:any,b:any)=>a.slot-b.slot).map((x:any)=>x.type.name)||fb.types)as string[],bst=Object.values(stats).reduce((a,b)=>a+b,0),bulk=stats.hp+stats.defense+stats.specialDefense;let role:PokemonDef['role']=stats.specialAttack>=stats.attack*1.18?'ranged':stats.defense>=85||stats.hp>=100?'tank':'melee';if([1,152,387].includes(id))role='generator';const offense=role==='ranged'?stats.specialAttack:stats.attack,power=Math.round(bst*.18+Math.max(stats.attack,stats.specialAttack)*.35+bulk*.08+stats.speed*.12),cost=role==='generator'?75:Math.round(clamp(55+power*.7,75,250)/25)*25,maxHp=Math.round(100+stats.hp*4+(stats.defense+stats.specialDefense)*1.15),damage=Math.round(8+offense*.23+power*.055),range=role==='ranged'||role==='generator'?530:role==='tank'?150:190,attackEvery=clamp(1.65-stats.speed/180,.62,1.55),moveSpeed=16+stats.speed*.12,cooldown=clamp(3.8+power/32,4.5,10.5);return{id,name:cap(raw?.name||fb.name),types,stats,sprite:raw?.sprites?.other?.['official-artwork']?.front_default||ART(id),role,cost,cooldown,maxHp,damage,range,attackEvery,moveSpeed,attackType:types[0]||'normal',power}}
-async function fetchPokemon(ids:number[]){const out:Record<number,PokemonDef>={};await Promise.all(ids.map(async id=>{try{const r=await fetch(API+id);if(!r.ok)throw 0;out[id]=modelPokemon(id,await r.json())}catch{out[id]=modelPokemon(id)}}));return out}const typeColor:Record<string,string>={normal:'#a8a77a',fire:'#ee8130',water:'#6390f0',electric:'#f7d02c',grass:'#7ac74c',ice:'#96d9d6',fighting:'#c22e28',poison:'#a33ea1',ground:'#e2bf65',flying:'#a98ff3',psychic:'#f95587',bug:'#a6b91a',rock:'#b6a136',ghost:'#735797',dragon:'#6f35fc',dark:'#705746',steel:'#b7b7ce',fairy:'#d685ad'};
-export default function App(){const[screen,setScreen]=useState<Screen>('menu'),[catalog,setCatalog]=useState<Record<number,PokemonDef>>(()=>Object.fromEntries([...new Set([...DEFENDER_IDS,...ENEMY_IDS])].map(id=>[id,modelPokemon(id)]))),[loading,setLoading]=useState(true),[deck,setDeck]=useState<number[]>([1,25,7,4,74,63]),[battleKey,setBattleKey]=useState(0);useEffect(()=>{let alive=true;fetchPokemon([...new Set([...DEFENDER_IDS,...ENEMY_IDS])]).then(x=>{if(alive){setCatalog(x);setLoading(false)}});return()=>{alive=false}},[]);const start=()=>{setBattleKey(k=>k+1);setScreen('battle')};if(screen==='battle')return<Battle key={battleKey} catalog={catalog} deck={deck} onExit={()=>setScreen('menu')} onRestart={start}/>;if(screen==='lab')return<Lab catalog={catalog} deck={deck} setDeck={setDeck} onBack={()=>setScreen('menu')}/>;if(screen==='help')return<Help onBack={()=>setScreen('menu')}/>;return<main className="menuShell"><div className="menuBackdrop"><div className="scanGlow"/></div><section className="heroCard"><div className="eyebrow">FAN GAME • LANE DEFENSE</div><h1>POKÉMON<br/><span>LANE CLASH</span></h1><p className="tagline">Build your six-Pokémon squad. Hold five lanes. Use type matchups, real base stats and smart timing to survive every wave.</p><div className="menuButtons"><button className="primary" onClick={start}>▶ START BATTLE</button><button onClick={()=>setScreen('lab')}>⚙ TEAM LAB</button><button onClick={()=>setScreen('help')}>? HOW TO PLAY</button></div><div className="statusLine"><span className={loading?'dot amber':'dot green'}/>{loading?'Refreshing PokéAPI data…':'PokéAPI data ready'} · Landscape optimized</div></section><section className="menuSquad">{deck.map((id,i)=><div className="menuMon" key={id} style={{transform:`translateY(${i%2?18:0}px)`}}><img src={catalog[id]?.sprite||ART(id)}/><b>{catalog[id]?.name}</b></div>)}</section><footer>Unofficial fan prototype. Pokémon © Nintendo / Creatures / GAME FREAK. Data: PokéAPI. Battle reference: modern main-series type chart.</footer></main>}
-function Lab({catalog,deck,setDeck,onBack}:{catalog:Record<number,PokemonDef>,deck:number[],setDeck:(d:number[])=>void,onBack:()=>void}){const toggle=(id:number)=>{if(deck.includes(id)){if(deck.length>1)setDeck(deck.filter(x=>x!==id))}else if(deck.length<6)setDeck([...deck,id])};return<main className="panelShell"><header className="topNav"><button onClick={onBack}>← BACK</button><div><b>TEAM LAB</b><small>{deck.length}/6 selected</small></div><span>Stats → lane-defense values</span></header><div className="labGrid">{DEFENDER_IDS.map(id=>{const p=catalog[id],chosen=deck.includes(id);return<button key={id} className={`pokeCard ${chosen?'chosen':''}`} onClick={()=>toggle(id)}><div className="cardTop"><span>#{String(id).padStart(3,'0')}</span><span className={`role ${p.role}`}>{p.role}</span></div><img src={p.sprite}/><h3>{p.name}</h3><div className="types">{p.types.map(t=><i key={t} style={{background:typeColor[t]||'#777'}}>{t}</i>)}</div><div className="miniStats"><span>HP <b>{p.maxHp}</b></span><span>DMG <b>{p.damage}</b></span><span>AURA <b>{p.cost}</b></span><span>CD <b>{p.cooldown.toFixed(1)}s</b></span></div><div className="powerBar"><i style={{width:`${clamp(p.power/180*100,8,100)}%`}}/></div><small>Power {p.power} · Base-stat driven</small></button>})}</div></main>}
-function Help({onBack}:{onBack:()=>void}){return<main className="panelShell"><header className="topNav"><button onClick={onBack}>← BACK</button><div><b>HOW TO PLAY</b><small>Pokémon meets lane defense</small></div></header><section className="helpGrid"><article><h2>1. Build</h2><p>Tap a Pokémon card in the bottom bar, then tap a highlighted tile. Every Pokémon costs Aura and has its own recharge timer.</p></article><article><h2>2. Counter</h2><p>Attacks use the modern type chart. Super-effective hits deal more damage; immunities deal zero. Double typings can create 4× or ¼× matchups.</p></article><article><h2>3. Collect Aura</h2><p>Tap glowing Aura orbs before they fade. Grass generators such as Bulbasaur create extra Aura while they survive.</p></article><article><h2>4. Hold 5 lanes</h2><p>Each lane has one emergency Poké-Guard. The first breakthrough wipes that lane; the next breakthrough costs a base heart.</p></article><article><h2>5. Survive waves</h2><p>Enemies become tougher every wave. The final wave includes an elite boss. Win by clearing the last wave with at least one base heart.</p></article><article><h2>Strength logic</h2><p>HP, Attack, Defense, Sp. Atk, Sp. Def and Speed from PokéAPI are converted into health, damage, attack interval, range, cost and cooldown. High Sp. Atk tends to create ranged units; high bulk creates tanks.</p></article></section></main>}
-function Battle({catalog,deck,onExit,onRestart}:{catalog:Record<number,PokemonDef>,deck:number[],onExit:()=>void,onRestart:()=>void}){const canvasRef=useRef<HTMLCanvasElement>(null),wrapRef=useRef<HTMLDivElement>(null),state=useRef<any>(null),[ui,setUi]=useState({aura:200,wave:1,hearts:3,score:0,selected:-1,gameOver:'',cooldowns:{}as Record<number,number>,guards:[true,true,true,true,true]}),[paused,setPaused]=useState(false),pausedRef=useRef(false);useEffect(()=>{pausedRef.current=paused},[paused]);const dims=useMemo(()=>({W:1920,H:900,arenaTop:125,arenaBottom:700,laneH:115,gridX:185,cellW:150,cols:7}),[]),reset=useCallback(()=>{const s={aura:200,wave:1,hearts:3,score:0,selected:-1,units:[]as Unit[],enemies:[]as Enemy[],orbs:[]as Orb[],shots:[]as Projectile[],texts:[]as FloatText[],uid:1,time:0,orbClock:2.2,spawnClock:1.8,waveSpawned:0,waveTarget:7,intermission:0,gameOver:'',cooldowns:Object.fromEntries(deck.map(id=>[id,0])),guards:[true,true,true,true,true],shake:0};state.current=s;setUi({aura:s.aura,wave:1,hearts:3,score:0,selected:-1,gameOver:'',cooldowns:{...s.cooldowns},guards:[...s.guards]});setPaused(false)},[deck]);useEffect(()=>reset(),[reset]);const sync=(s:any)=>setUi({aura:Math.round(s.aura),wave:s.wave,hearts:s.hearts,score:s.score,selected:s.selected,gameOver:s.gameOver,cooldowns:{...s.cooldowns},guards:[...s.guards]}),addText=(s:any,x:number,y:number,text:string,kind:FloatText['kind'])=>s.texts.push({uid:s.uid++,x,y,text,ttl:1,kind}),damageEnemy=(s:any,e:Enemy,amount:number,mult:number)=>{e.hp-=amount;e.flash=.11;addText(s,e.x,e.y-50,`${mult>1?'SUPER! ':mult===0?'IMMUNE ':''}-${Math.max(0,Math.round(amount))}`,mult>1?'good':mult<1?'bad':'damage');if(e.hp<=0){s.score+=Math.round(100+e.power*e.wave);s.enemies=s.enemies.filter((x:Enemy)=>x.uid!==e.uid)}},spawnEnemy=(s:any)=>{let pool=ENEMY_IDS.slice(0,Math.min(4+s.wave*2,ENEMY_IDS.length-2)),id=pool[Math.floor(Math.random()*pool.length)],elite=false;if(s.wave===5&&s.waveSpawned===s.waveTarget-1){id=94;elite=true}else if(s.wave>=4&&Math.random()<.14){id=143;elite=true}const p=catalog[id]||modelPokemon(id),lane=Math.floor(Math.random()*5),scale=1+(s.wave-1)*.18+(elite?.35:0);s.enemies.push({...p,uid:s.uid++,lane,x:1840,y:dims.arenaTop+lane*dims.laneH+dims.laneH/2,hp:p.maxHp*scale,maxHpScaled:p.maxHp*scale,attackClock:0,wave:s.wave,flash:0,elite})};
-const update=(dt:number)=>{const s=state.current;if(!s||s.gameOver)return;s.time+=dt;Object.keys(s.cooldowns).forEach(k=>s.cooldowns[k]=Math.max(0,s.cooldowns[k]-dt));s.orbClock-=dt;if(s.orbClock<=0){s.orbClock=4.2+Math.random()*2.2;s.orbs.push({uid:s.uid++,x:320+Math.random()*1200,y:170+Math.random()*420,value:Math.random()<.15?50:25,ttl:8,vy:14})}for(const u of s.units){u.cooldownLeft=Math.max(0,u.cooldownLeft-dt);u.flash=Math.max(0,u.flash-dt);if(u.role==='generator'){u.auraTimer-=dt;if(u.auraTimer<=0){u.auraTimer=11;s.orbs.push({uid:s.uid++,x:u.x+20,y:u.y-35,value:25,ttl:9,vy:-4})}}const targets=s.enemies.filter((e:Enemy)=>e.lane===u.lane&&e.x>u.x-30&&e.x-u.x<=u.range).sort((a:Enemy,b:Enemy)=>a.x-b.x);if(targets.length&&u.cooldownLeft<=0){u.cooldownLeft=u.attackEvery;const t=targets[0],mult=eff(u.attackType,t.types),mitig=100/(100+(t.stats.defense+t.stats.specialDefense)*.22),dmg=u.damage*mitig*mult*1.65;if(u.range>220)s.shots.push({uid:s.uid++,x:u.x+45,y:u.y-8,lane:u.lane,vx:520,damage:dmg,type:u.attackType,target:t.uid,ttl:2.2});else damageEnemy(s,t,dmg,mult)}}for(const sh of[...s.shots]){sh.x+=sh.vx*dt;sh.ttl-=dt;const t=s.enemies.find((e:Enemy)=>e.uid===sh.target);if(t&&Math.abs(sh.x-t.x)<55){damageEnemy(s,t,sh.damage,eff(sh.type,t.types));s.shots=s.shots.filter((x:Projectile)=>x.uid!==sh.uid)}else if(sh.ttl<=0)s.shots=s.shots.filter((x:Projectile)=>x.uid!==sh.uid)}for(const e of[...s.enemies]){e.flash=Math.max(0,e.flash-dt);const blocker=s.units.filter((u:Unit)=>u.lane===e.lane&&u.x<e.x&&e.x-u.x<145).sort((a:Unit,b:Unit)=>b.x-a.x)[0];if(blocker){e.attackClock-=dt;if(e.attackClock<=0){e.attackClock=clamp(1.45-e.stats.speed/250,.65,1.4);const mult=eff(e.attackType,blocker.types),mitig=100/(100+(blocker.stats.defense+blocker.stats.specialDefense)*.22),dmg=e.damage*mitig*mult*1.45;blocker.hp-=dmg;blocker.flash=.12;addText(s,blocker.x,blocker.y-45,`-${Math.round(dmg)}`,mult>1?'bad':'damage');if(blocker.hp<=0)s.units=s.units.filter((u:Unit)=>u.uid!==blocker.uid)}}else{e.x-=e.moveSpeed*dt*(1+s.wave*.035);if(e.x<115){if(s.guards[e.lane]){s.guards[e.lane]=false;s.shake=.35;const victims=s.enemies.filter((x:Enemy)=>x.lane===e.lane);for(const v of victims){s.score+=50;addText(s,v.x,v.y,'POKÉ-GUARD!','good')}s.enemies=s.enemies.filter((x:Enemy)=>x.lane!==e.lane)}else{s.enemies=s.enemies.filter((x:Enemy)=>x.uid!==e.uid);s.hearts--;s.shake=.5;if(s.hearts<=0)s.gameOver='DEFEAT'}}}}s.orbs=s.orbs.filter((o:Orb)=>{o.ttl-=dt;o.y+=o.vy*dt;return o.ttl>0});s.texts=s.texts.filter((t:FloatText)=>{t.ttl-=dt;t.y-=22*dt;return t.ttl>0});s.shake=Math.max(0,s.shake-dt);if(s.waveSpawned<s.waveTarget){s.spawnClock-=dt;if(s.spawnClock<=0){spawnEnemy(s);s.waveSpawned++;s.spawnClock=clamp(3.15-s.wave*.28,1.5,3.1)*(.7+Math.random()*.6)}}else if(s.enemies.length===0){s.intermission+=dt;if(s.intermission>3){if(s.wave>=5){s.gameOver='VICTORY';s.score+=2500}else{s.wave++;s.waveSpawned=0;s.waveTarget=6+s.wave*3;s.intermission=0;s.spawnClock=2;s.aura+=75;addText(s,960,180,`WAVE ${s.wave}`,'good')}}}if(Math.floor(s.time*5)!==Math.floor((s.time-dt)*5))sync(s)};
-const imageCache=useRef<Record<number,HTMLImageElement>>({}),imageFor=(id:number,src:string)=>{if(!imageCache.current[id]){const im=new Image();im.crossOrigin='anonymous';im.src=src;imageCache.current[id]=im}return imageCache.current[id]},draw=(ctx:CanvasRenderingContext2D,cv:HTMLCanvasElement)=>{const s=state.current;if(!s)return;const sx=cv.width/dims.W,sy=cv.height/dims.H;ctx.save();ctx.setTransform(sx,0,0,sy,0,0);if(s.shake>0)ctx.translate((Math.random()-.5)*18*s.shake,(Math.random()-.5)*8*s.shake);const g=ctx.createLinearGradient(0,0,dims.W,dims.H);g.addColorStop(0,'#153f2d');g.addColorStop(.5,'#225739');g.addColorStop(1,'#102c37');ctx.fillStyle=g;ctx.fillRect(0,0,dims.W,dims.H);ctx.fillStyle='rgba(255,255,255,.035)';for(let x=0;x<dims.W;x+=48)ctx.fillRect(x,0,1,dims.H);for(let l=0;l<5;l++){const y=dims.arenaTop+l*dims.laneH;ctx.fillStyle=l%2?'rgba(13,36,27,.32)':'rgba(55,110,61,.23)';ctx.fillRect(0,y,dims.W,dims.laneH-2);ctx.strokeStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(dims.W,y);ctx.stroke();for(let c=0;c<dims.cols;c++){const x=dims.gridX+c*dims.cellW;ctx.strokeStyle=s.selected>=0?'rgba(170,255,190,.23)':'rgba(255,255,255,.055)';ctx.strokeRect(x,y+5,dims.cellW-4,dims.laneH-10)}}ctx.fillStyle='#0c1b20';ctx.fillRect(18,dims.arenaTop-5,100,dims.arenaBottom-dims.arenaTop+10);ctx.font='bold 22px system-ui';ctx.fillStyle='#b7ccd3';ctx.textAlign='center';ctx.fillText('BASE',68,110);for(let l=0;l<5;l++){const y=dims.arenaTop+l*dims.laneH+dims.laneH/2;if(s.guards[l]){ctx.fillStyle='#e84545';ctx.beginPath();ctx.arc(137,y,23,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';ctx.fillText('G',137,y+5)}else{ctx.strokeStyle='rgba(255,255,255,.13)';ctx.strokeRect(120,y-18,35,36)}}const drawMon=(p:any,enemy=false)=>{const size=enemy?(p.elite?106:82):88;ctx.save();ctx.translate(p.x,p.y);if(p.flash>0){ctx.globalAlpha=.52;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(0,0,size*.56,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}const img=imageFor(p.id,p.sprite);if(img.complete&&img.naturalWidth)ctx.drawImage(img,-size/2,-size*.64,size,size);else{ctx.fillStyle=typeColor[p.types[0]]||'#888';ctx.beginPath();ctx.arc(0,-8,size*.42,0,Math.PI*2);ctx.fill()}const max=enemy?p.maxHpScaled:p.maxHp;ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(-42,30,84,8);ctx.fillStyle=p.hp/max>.5?'#54e07b':p.hp/max>.25?'#ffd166':'#ff5757';ctx.fillRect(-42,30,84*clamp(p.hp/max,0,1),8);ctx.font='700 14px system-ui';ctx.textAlign='center';ctx.fillStyle='#fff';ctx.fillText(p.name,0,55);if(enemy&&p.elite){ctx.fillStyle='#ffd166';ctx.fillText('ELITE',0,-61)}ctx.restore()};s.units.forEach((u:Unit)=>drawMon(u,false));s.enemies.forEach((e:Enemy)=>drawMon(e,true));for(const sh of s.shots){ctx.fillStyle=typeColor[sh.type]||'#fff';ctx.shadowColor=String(ctx.fillStyle);ctx.shadowBlur=14;ctx.beginPath();ctx.arc(sh.x,sh.y,10,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}for(const o of s.orbs){const pulse=1+Math.sin(s.time*6+o.uid)*.08;ctx.save();ctx.translate(o.x,o.y);ctx.scale(pulse,pulse);ctx.shadowColor='#6ef3ff';ctx.shadowBlur=25;const gg=ctx.createRadialGradient(0,0,4,0,0,25);gg.addColorStop(0,'#fff');gg.addColorStop(.25,'#80f8ff');gg.addColorStop(1,'rgba(64,207,255,.05)');ctx.fillStyle=gg;ctx.beginPath();ctx.arc(0,0,26,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#05292d';ctx.font='900 12px system-ui';ctx.fillText('+'+o.value,0,4);ctx.restore()}for(const t of s.texts){ctx.globalAlpha=clamp(t.ttl,0,1);ctx.font='900 22px system-ui';ctx.textAlign='center';ctx.fillStyle=t.kind==='good'?'#81ff9c':t.kind==='bad'?'#ff8b8b':'#fff';ctx.fillText(t.text,t.x,t.y);ctx.globalAlpha=1}ctx.restore()};useEffect(()=>{const cv=canvasRef.current;if(!cv)return;const ctx=cv.getContext('2d')!;let raf=0,last=performance.now();const resize=()=>{const r=wrapRef.current!.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);cv.width=r.width*dpr;cv.height=r.height*dpr;cv.style.width=r.width+'px';cv.style.height=r.height+'px'};resize();window.addEventListener('resize',resize);const tick=(now:number)=>{const dt=Math.min((now-last)/1000,.05);last=now;if(!pausedRef.current)update(dt);draw(ctx,cv);raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick);return()=>{cancelAnimationFrame(raf);window.removeEventListener('resize',resize)}},[catalog,deck]);const pointer=(ev:React.PointerEvent<HTMLCanvasElement>)=>{const s=state.current;if(!s||s.gameOver||paused)return;const r=canvasRef.current!.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width*dims.W,y=(ev.clientY-r.top)/r.height*dims.H,orb=s.orbs.find((o:Orb)=>Math.hypot(o.x-x,o.y-y)<45);if(orb){s.aura+=orb.value;s.orbs=s.orbs.filter((o:Orb)=>o.uid!==orb.uid);addText(s,orb.x,orb.y,`+${orb.value} AURA`,'good');sync(s);return}if(s.selected>=0&&x>=dims.gridX&&x<dims.gridX+dims.cols*dims.cellW&&y>=dims.arenaTop&&y<dims.arenaBottom){const lane=Math.floor((y-dims.arenaTop)/dims.laneH),col=Math.floor((x-dims.gridX)/dims.cellW),id=deck[s.selected],p=catalog[id],occupied=s.units.some((u:Unit)=>u.lane===lane&&u.col===col);if(!occupied&&p&&s.aura>=p.cost&&s.cooldowns[id]<=0){s.aura-=p.cost;s.cooldowns[id]=p.cooldown;s.units.push({...p,uid:s.uid++,lane,col,x:dims.gridX+col*dims.cellW+dims.cellW/2,y:dims.arenaTop+lane*dims.laneH+dims.laneH/2,hp:p.maxHp,cooldownLeft:.2,auraTimer:5+Math.random()*3,flash:0});s.selected=-1;sync(s)}else addText(s,x,y,occupied?'OCCUPIED':s.aura<p.cost?'NEED AURA':'RECHARGING','bad')}};const choose=(i:number)=>{const s=state.current;if(!s||s.gameOver)return;const id=deck[i],p=catalog[id];if(s.cooldowns[id]>0||s.aura<p.cost)return;s.selected=s.selected===i?-1:i;sync(s)};return<main className="battleShell" ref={wrapRef}><canvas ref={canvasRef} onPointerDown={pointer}/><div className="battleHud"><div className="auraHud"><b>✦ {ui.aura}</b><small>AURA</small></div><div className="waveHud"><b>WAVE {ui.wave}/5</b><div><i style={{width:`${(ui.wave-1)/4*100}%`}}/></div></div><div className="heartHud">{'♥'.repeat(ui.hearts)}<span>{'♡'.repeat(3-ui.hearts)}</span></div><div className="scoreHud">SCORE <b>{ui.score}</b></div><button className="pauseBtn" onClick={()=>setPaused(p=>!p)}>{paused?'▶':'Ⅱ'}</button></div><div className="deckBar">{deck.map((id,i)=>{const p=catalog[id],cd=ui.cooldowns[id]||0,disabled=cd>0||ui.aura<p.cost;return<button key={id} className={`deckCard ${ui.selected===i?'selected':''} ${disabled?'disabled':''}`} onClick={()=>choose(i)}><img src={p.sprite}/><div className="deckInfo"><b>{p.name}</b><span>{p.role}</span></div><strong>✦{p.cost}</strong>{cd>0&&<em>{cd.toFixed(1)}</em>}<i className="typeStrip" style={{background:typeColor[p.types[0]]||'#777'}}/></button>})}<div className="guardLegend"><b>POKÉ-GUARDS</b><span>{ui.guards.map((g,i)=><i key={i} className={g?'on':''}>{i+1}</i>)}</span></div></div>{paused&&<div className="pauseOverlay"><section><h2>PAUSED</h2><button className="primary" onClick={()=>setPaused(false)}>RESUME</button><button onClick={onRestart}>RESTART</button><button onClick={onExit}>MAIN MENU</button></section></div>}{ui.gameOver&&<div className="pauseOverlay"><section><div className={`result ${ui.gameOver==='VICTORY'?'win':'lose'}`}>{ui.gameOver}</div><h2>{ui.gameOver==='VICTORY'?'All five waves cleared!':'The base was overrun.'}</h2><p>Final score: <b>{ui.score}</b></p><button className="primary" onClick={onRestart}>PLAY AGAIN</button><button onClick={onExit}>MAIN MENU</button></section></div>}</main>}
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+type Screen = 'menu' | 'battle' | 'lab' | 'help';
+type Role = 'ranged' | 'melee' | 'tank' | 'generator';
+type StatBlock = { hp:number; attack:number; defense:number; specialAttack:number; specialDefense:number; speed:number };
+type PokemonDef = { id:number; name:string; types:string[]; stats:StatBlock; sprite:string; role:Role; cost:number; cooldown:number; maxHp:number; damage:number; range:number; attackEvery:number; moveSpeed:number; attackType:string; power:number };
+type Unit = PokemonDef & { uid:number; lane:number; col:number; x:number; y:number; hp:number; attackClock:number; auraClock:number; flash:number };
+type Enemy = PokemonDef & { uid:number; lane:number; x:number; y:number; hp:number; scaledHp:number; attackClock:number; wave:number; flash:number; elite:boolean };
+type Orb = { uid:number; x:number; y:number; value:number; ttl:number; vy:number };
+type Shot = { uid:number; x:number; y:number; lane:number; vx:number; damage:number; type:string; targetId:number; ttl:number };
+type FxText = { uid:number; x:number; y:number; text:string; ttl:number; kind:'good'|'bad'|'neutral' };
+type GameState = {
+  aura:number; wave:number; hearts:number; score:number; selected:number; units:Unit[]; enemies:Enemy[]; orbs:Orb[]; shots:Shot[]; texts:FxText[];
+  uid:number; time:number; uiClock:number; orbClock:number; spawnClock:number; waveSpawned:number; waveTarget:number; intermission:number; gameOver:''|'VICTORY'|'DEFEAT'; cooldowns:Record<number,number>; guards:boolean[];
+};
+
+const API = 'https://pokeapi.co/api/v2/pokemon/';
+const ART = (id:number) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
+const DEFENDER_IDS = [1,25,7,4,74,63,133,152,258,390,387,143];
+const ENEMY_IDS = [19,41,27,56,66,81,92,109,111,125,215,246,143,94];
+const ALL_IDS = [...new Set([...DEFENDER_IDS, ...ENEMY_IDS])];
+
+const fallback:Record<number,{name:string;types:string[];stats:StatBlock}> = {
+  1:{name:'Bulbasaur',types:['grass','poison'],stats:{hp:45,attack:49,defense:49,specialAttack:65,specialDefense:65,speed:45}},
+  4:{name:'Charmander',types:['fire'],stats:{hp:39,attack:52,defense:43,specialAttack:60,specialDefense:50,speed:65}},
+  7:{name:'Squirtle',types:['water'],stats:{hp:44,attack:48,defense:65,specialAttack:50,specialDefense:64,speed:43}},
+  19:{name:'Rattata',types:['normal'],stats:{hp:30,attack:56,defense:35,specialAttack:25,specialDefense:35,speed:72}},
+  25:{name:'Pikachu',types:['electric'],stats:{hp:35,attack:55,defense:40,specialAttack:50,specialDefense:50,speed:90}},
+  27:{name:'Sandshrew',types:['ground'],stats:{hp:50,attack:75,defense:85,specialAttack:20,specialDefense:30,speed:40}},
+  41:{name:'Zubat',types:['poison','flying'],stats:{hp:40,attack:45,defense:35,specialAttack:30,specialDefense:40,speed:55}},
+  56:{name:'Mankey',types:['fighting'],stats:{hp:40,attack:80,defense:35,specialAttack:35,specialDefense:45,speed:70}},
+  63:{name:'Abra',types:['psychic'],stats:{hp:25,attack:20,defense:15,specialAttack:105,specialDefense:55,speed:90}},
+  66:{name:'Machop',types:['fighting'],stats:{hp:70,attack:80,defense:50,specialAttack:35,specialDefense:35,speed:35}},
+  74:{name:'Geodude',types:['rock','ground'],stats:{hp:40,attack:80,defense:100,specialAttack:30,specialDefense:30,speed:20}},
+  81:{name:'Magnemite',types:['electric','steel'],stats:{hp:25,attack:35,defense:70,specialAttack:95,specialDefense:55,speed:45}},
+  92:{name:'Gastly',types:['ghost','poison'],stats:{hp:30,attack:35,defense:30,specialAttack:100,specialDefense:35,speed:80}},
+  94:{name:'Gengar',types:['ghost','poison'],stats:{hp:60,attack:65,defense:60,specialAttack:130,specialDefense:75,speed:110}},
+  109:{name:'Koffing',types:['poison'],stats:{hp:40,attack:65,defense:95,specialAttack:60,specialDefense:45,speed:35}},
+  111:{name:'Rhyhorn',types:['ground','rock'],stats:{hp:80,attack:85,defense:95,specialAttack:30,specialDefense:30,speed:25}},
+  125:{name:'Electabuzz',types:['electric'],stats:{hp:65,attack:83,defense:57,specialAttack:95,specialDefense:85,speed:105}},
+  133:{name:'Eevee',types:['normal'],stats:{hp:55,attack:55,defense:50,specialAttack:45,specialDefense:65,speed:55}},
+  143:{name:'Snorlax',types:['normal'],stats:{hp:160,attack:110,defense:65,specialAttack:65,specialDefense:110,speed:30}},
+  152:{name:'Chikorita',types:['grass'],stats:{hp:45,attack:49,defense:65,specialAttack:49,specialDefense:65,speed:45}},
+  215:{name:'Sneasel',types:['dark','ice'],stats:{hp:55,attack:95,defense:55,specialAttack:35,specialDefense:75,speed:115}},
+  246:{name:'Larvitar',types:['rock','ground'],stats:{hp:50,attack:64,defense:50,specialAttack:45,specialDefense:50,speed:41}},
+  258:{name:'Mudkip',types:['water'],stats:{hp:50,attack:70,defense:50,specialAttack:50,specialDefense:50,speed:40}},
+  387:{name:'Turtwig',types:['grass'],stats:{hp:55,attack:68,defense:64,specialAttack:45,specialDefense:55,speed:31}},
+  390:{name:'Chimchar',types:['fire'],stats:{hp:44,attack:58,defense:44,specialAttack:58,specialDefense:44,speed:61}},
+};
+
+const chart:Record<string,Record<string,number>> = {
+  normal:{rock:.5,ghost:0,steel:.5}, fire:{fire:.5,water:.5,grass:2,ice:2,bug:2,rock:.5,dragon:.5,steel:2}, water:{fire:2,water:.5,grass:.5,ground:2,rock:2,dragon:.5},
+  electric:{water:2,electric:.5,grass:.5,ground:0,flying:2,dragon:.5}, grass:{fire:.5,water:2,grass:.5,poison:.5,ground:2,flying:.5,bug:.5,rock:2,dragon:.5,steel:.5},
+  ice:{fire:.5,water:.5,grass:2,ice:.5,ground:2,flying:2,dragon:2,steel:.5}, fighting:{normal:2,ice:2,poison:.5,flying:.5,psychic:.5,bug:.5,rock:2,ghost:0,dark:2,steel:2,fairy:.5},
+  poison:{grass:2,poison:.5,ground:.5,rock:.5,ghost:.5,steel:0,fairy:2}, ground:{fire:2,electric:2,grass:.5,poison:2,flying:0,bug:.5,rock:2,steel:2},
+  flying:{electric:.5,grass:2,fighting:2,bug:2,rock:.5,steel:.5}, psychic:{fighting:2,poison:2,psychic:.5,dark:0,steel:.5},
+  bug:{fire:.5,grass:2,fighting:.5,poison:.5,flying:.5,psychic:2,ghost:.5,dark:2,steel:.5,fairy:.5}, rock:{fire:2,ice:2,fighting:.5,ground:.5,flying:2,bug:2,steel:.5},
+  ghost:{normal:0,psychic:2,ghost:2,dark:.5}, dragon:{dragon:2,steel:.5,fairy:0}, dark:{fighting:.5,psychic:2,ghost:2,dark:.5,fairy:.5},
+  steel:{fire:.5,water:.5,electric:.5,ice:2,rock:2,steel:.5,fairy:2}, fairy:{fire:.5,fighting:2,poison:.5,dragon:2,dark:2,steel:.5},
+};
+
+const typeColor:Record<string,string> = {normal:'#a8a77a',fire:'#ee8130',water:'#6390f0',electric:'#f7d02c',grass:'#7ac74c',ice:'#96d9d6',fighting:'#c22e28',poison:'#a33ea1',ground:'#e2bf65',flying:'#a98ff3',psychic:'#f95587',bug:'#a6b91a',rock:'#b6a136',ghost:'#735797',dragon:'#6f35fc',dark:'#705746',steel:'#b7b7ce',fairy:'#d685ad'};
+const clamp = (n:number,a:number,b:number) => Math.max(a,Math.min(b,n));
+const cap = (s:string) => s.charAt(0).toUpperCase()+s.slice(1);
+const eff = (attackType:string, defenderTypes:string[]) => defenderTypes.reduce((m,t)=>m*(chart[attackType]?.[t] ?? 1),1);
+
+function modelPokemon(id:number, raw?:any):PokemonDef {
+  const fb = fallback[id] || {name:`Pokemon ${id}`,types:['normal'],stats:{hp:50,attack:50,defense:50,specialAttack:50,specialDefense:50,speed:50}};
+  const get = (name:string,key:keyof StatBlock) => raw?.stats?.find((x:any)=>x.stat.name===name)?.base_stat ?? fb.stats[key];
+  const stats:StatBlock = {hp:get('hp','hp'),attack:get('attack','attack'),defense:get('defense','defense'),specialAttack:get('special-attack','specialAttack'),specialDefense:get('special-defense','specialDefense'),speed:get('speed','speed')};
+  const types = (raw?.types?.slice().sort((a:any,b:any)=>a.slot-b.slot).map((x:any)=>x.type.name) || fb.types) as string[];
+  const bst = Object.values(stats).reduce((a,b)=>a+b,0), bulk = stats.hp+stats.defense+stats.specialDefense;
+  let role:Role = stats.specialAttack >= stats.attack*1.18 ? 'ranged' : (stats.defense>=85 || stats.hp>=100 ? 'tank' : 'melee');
+  if ([1,152,387].includes(id)) role='generator';
+  const offense = role==='ranged' ? stats.specialAttack : stats.attack;
+  const power = Math.round(bst*.18 + Math.max(stats.attack,stats.specialAttack)*.35 + bulk*.08 + stats.speed*.12);
+  const cost = role==='generator' ? 75 : Math.round(clamp(55+power*.7,75,225)/25)*25;
+  return {
+    id, name:cap(raw?.name || fb.name), types, stats, sprite:raw?.sprites?.other?.['official-artwork']?.front_default || ART(id), role, cost,
+    cooldown:clamp(3.8+power/32,4.5,10.5), maxHp:Math.round(100+stats.hp*4+(stats.defense+stats.specialDefense)*1.15),
+    damage:Math.round(8+offense*.23+power*.055), range:role==='ranged'?460:role==='generator'?430:role==='tank'?145:180,
+    attackEvery:clamp(1.6-stats.speed/190,.62,1.5), moveSpeed:14+stats.speed*.10, attackType:types[0] || 'normal', power
+  };
+}
+
+async function fetchPokemon(ids:number[]) {
+  const out:Record<number,PokemonDef> = {};
+  await Promise.all(ids.map(async id => {
+    try { const r=await fetch(API+id); if(!r.ok) throw new Error(); out[id]=modelPokemon(id,await r.json()); }
+    catch { out[id]=modelPokemon(id); }
+  }));
+  return out;
+}
+
+export default function App(){
+  const [screen,setScreen]=useState<Screen>('menu');
+  const [catalog,setCatalog]=useState<Record<number,PokemonDef>>(()=>Object.fromEntries(ALL_IDS.map(id=>[id,modelPokemon(id)])));
+  const [loading,setLoading]=useState(true);
+  const [deck,setDeck]=useState<number[]>([1,25,7,4,74,63]);
+  const [battleKey,setBattleKey]=useState(0);
+  useEffect(()=>{let alive=true;fetchPokemon(ALL_IDS).then(x=>{if(alive){setCatalog(x);setLoading(false)}});return()=>{alive=false}},[]);
+  const start=()=>{setBattleKey(k=>k+1);setScreen('battle')};
+  if(screen==='battle') return <Battle key={battleKey} catalog={catalog} deck={deck} onExit={()=>setScreen('menu')} onRestart={start}/>;
+  if(screen==='lab') return <Lab catalog={catalog} deck={deck} setDeck={setDeck} onBack={()=>setScreen('menu')}/>;
+  if(screen==='help') return <Help onBack={()=>setScreen('menu')}/>;
+  return <main className="menuShell"><div className="menuBackdrop"/><section className="heroCard"><div className="eyebrow">FAN GAME • LANE DEFENSE</div><h1>POKÉMON<br/><span>LANE CLASH</span></h1><p className="tagline">Build a six-Pokémon squad and defend five lanes using real base stats and type matchups.</p><div className="menuButtons"><button className="primary" onClick={start}>▶ START BATTLE</button><button onClick={()=>setScreen('lab')}>⚙ TEAM LAB</button><button onClick={()=>setScreen('help')}>? HOW TO PLAY</button></div><div className="statusLine"><span className={loading?'dot amber':'dot green'}/>{loading?'Refreshing PokéAPI data…':'PokéAPI data ready'} · v0.1.1 stable layout</div></section><section className="menuSquad">{deck.map(id=><div className="menuMon" key={id}><img src={catalog[id]?.sprite||ART(id)}/><b>{catalog[id]?.name}</b></div>)}</section><footer>Unofficial fan prototype · Data: PokéAPI</footer></main>;
+}
+
+function Lab({catalog,deck,setDeck,onBack}:{catalog:Record<number,PokemonDef>,deck:number[],setDeck:(d:number[])=>void,onBack:()=>void}){
+  const toggle=(id:number)=>{if(deck.includes(id)){if(deck.length>1)setDeck(deck.filter(x=>x!==id))}else if(deck.length<6)setDeck([...deck,id])};
+  return <main className="panelShell"><header className="topNav"><button onClick={onBack}>← BACK</button><div><b>TEAM LAB</b><small>{deck.length}/6 selected</small></div><span>PokéAPI stats → lane-defense values</span></header><div className="labGrid">{DEFENDER_IDS.map(id=>{const p=catalog[id],chosen=deck.includes(id);return <button key={id} className={`pokeCard ${chosen?'chosen':''}`} onClick={()=>toggle(id)}><div className="cardTop"><span>#{String(id).padStart(3,'0')}</span><span className={`role ${p.role}`}>{p.role}</span></div><img src={p.sprite}/><h3>{p.name}</h3><div className="types">{p.types.map(t=><i key={t} style={{background:typeColor[t]||'#777'}}>{t}</i>)}</div><div className="miniStats"><span>HP <b>{p.maxHp}</b></span><span>DMG <b>{p.damage}</b></span><span>AURA <b>{p.cost}</b></span><span>CD <b>{p.cooldown.toFixed(1)}s</b></span></div></button>})}</div></main>;
+}
+
+function Help({onBack}:{onBack:()=>void}){
+  return <main className="panelShell"><header className="topNav"><button onClick={onBack}>← BACK</button><div><b>HOW TO PLAY</b><small>v0.1.1</small></div></header><section className="helpGrid"><article><h2>Build</h2><p>Select a card, then tap a free tile. Cards cost Aura and recharge after placement.</p></article><article><h2>Counter</h2><p>Attacks use the modern Pokémon type chart, including immunities and dual-type multipliers.</p></article><article><h2>Aura</h2><p>Tap cyan Aura orbs. Generator Pokémon create extra Aura over time.</p></article><article><h2>Five lanes</h2><p>Each lane has one Poké-Guard that clears the lane on its first breakthrough.</p></article><article><h2>Waves</h2><p>Survive five waves. The last enemy of wave five is an elite Gengar.</p></article><article><h2>Stability</h2><p>The battle now uses a fixed-step loop, hard object caps and no screen-shake to prevent runaway lag.</p></article></section></main>;
+}
+
+function Battle({catalog,deck,onExit,onRestart}:{catalog:Record<number,PokemonDef>,deck:number[],onExit:()=>void,onRestart:()=>void}){
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const state=useRef<GameState|null>(null);
+  const pausedRef=useRef(false);
+  const [paused,setPaused]=useState(false);
+  const [ui,setUi]=useState({aura:225,wave:1,hearts:3,score:0,selected:-1,gameOver:'',cooldowns:{} as Record<number,number>,guards:[true,true,true,true,true],waveSpawned:0,waveTarget:8});
+  const dims=useMemo(()=>({W:1600,H:540,laneH:108,gridX:175,cellW:165,cols:7}),[]);
+
+  const sync=useCallback((s:GameState)=>setUi({aura:Math.round(s.aura),wave:s.wave,hearts:s.hearts,score:s.score,selected:s.selected,gameOver:s.gameOver,cooldowns:{...s.cooldowns},guards:[...s.guards],waveSpawned:s.waveSpawned,waveTarget:s.waveTarget}),[]);
+  const reset=useCallback(()=>{
+    const s:GameState={aura:225,wave:1,hearts:3,score:0,selected:-1,units:[],enemies:[],orbs:[],shots:[],texts:[],uid:1,time:0,uiClock:0,orbClock:2.2,spawnClock:1.7,waveSpawned:0,waveTarget:8,intermission:0,gameOver:'',cooldowns:Object.fromEntries(deck.map(id=>[id,0])),guards:[true,true,true,true,true]};
+    state.current=s;pausedRef.current=false;setPaused(false);sync(s);
+  },[deck,sync]);
+  useEffect(()=>reset(),[reset]);
+  useEffect(()=>{pausedRef.current=paused},[paused]);
+
+  const addFx=(s:GameState,x:number,y:number,text:string,kind:FxText['kind'])=>{if(s.texts.length>=28)return;s.texts.push({uid:s.uid++,x,y,text,ttl:.7,kind})};
+  const hitEnemy=(s:GameState,e:Enemy,damage:number,mult:number)=>{
+    if(e.hp<=0)return;e.hp-=damage;e.flash=.09;
+    if(mult>=2)addFx(s,e.x,e.y-48,'SUPER!','good'); else if(mult===0)addFx(s,e.x,e.y-48,'IMMUNE','bad');
+    if(e.hp<=0){e.hp=0;s.score+=Math.round(90+e.power*e.wave*(e.elite?2:1));}
+  };
+  const spawnEnemy=(s:GameState)=>{
+    if(s.enemies.length>=26)return;
+    const usable=Math.min(4+s.wave*2,ENEMY_IDS.length-2);let id=ENEMY_IDS[Math.floor(Math.random()*usable)],elite=false;
+    if(s.wave===5&&s.waveSpawned===s.waveTarget-1){id=94;elite=true}else if(s.wave>=4&&Math.random()<.10){id=143;elite=true}
+    const p=catalog[id]||modelPokemon(id),lane=Math.floor(Math.random()*5),scale=1+(s.wave-1)*.15+(elite?.35:0);
+    s.enemies.push({...p,uid:s.uid++,lane,x:1545,y:lane*dims.laneH+dims.laneH/2,hp:p.maxHp*scale,scaledHp:p.maxHp*scale,attackClock:0,wave:s.wave,flash:0,elite});
+  };
+
+  const update=useCallback((dt:number)=>{
+    const s=state.current;if(!s||s.gameOver)return;
+    s.time+=dt;s.uiClock+=dt;
+    for(const id of deck)s.cooldowns[id]=Math.max(0,(s.cooldowns[id]||0)-dt);
+
+    s.orbClock-=dt;
+    if(s.orbClock<=0&&s.orbs.length<8){s.orbClock=4.7+Math.random()*2.2;s.orbs.push({uid:s.uid++,x:300+Math.random()*1020,y:60+Math.random()*400,value:Math.random()<.14?50:25,ttl:8,vy:7})}
+
+    for(const u of s.units){
+      if(u.hp<=0)continue;u.attackClock=Math.max(0,u.attackClock-dt);u.flash=Math.max(0,u.flash-dt);
+      if(u.role==='generator'){u.auraClock-=dt;if(u.auraClock<=0&&s.orbs.length<10){u.auraClock=11;s.orbs.push({uid:s.uid++,x:u.x+18,y:u.y-26,value:25,ttl:8,vy:-3})}}
+      if(u.attackClock>0)continue;
+      let target:Enemy|undefined;let best=Infinity;
+      for(const e of s.enemies){if(e.hp<=0||e.lane!==u.lane||e.x<u.x-25)continue;const d=e.x-u.x;if(d<=u.range&&d<best){best=d;target=e}}
+      if(!target)continue;
+      u.attackClock=u.attackEvery;
+      const mult=eff(u.attackType,target.types),mit=100/(100+(target.stats.defense+target.stats.specialDefense)*.22),dmg=u.damage*mit*mult*1.6;
+      if(u.range>220){if(s.shots.length<70)s.shots.push({uid:s.uid++,x:u.x+34,y:u.y,lane:u.lane,vx:520,damage:dmg,type:u.attackType,targetId:target.uid,ttl:2})}
+      else hitEnemy(s,target,dmg,mult);
+    }
+
+    for(const sh of s.shots){
+      if(sh.ttl<=0)continue;sh.x+=sh.vx*dt;sh.ttl-=dt;
+      const target=s.enemies.find(e=>e.uid===sh.targetId&&e.hp>0);
+      if(target&&target.lane===sh.lane&&Math.abs(sh.x-target.x)<42){hitEnemy(s,target,sh.damage,eff(sh.type,target.types));sh.ttl=0}
+    }
+
+    const guardTriggered=new Set<number>();
+    for(const e of s.enemies){
+      if(e.hp<=0)continue;e.flash=Math.max(0,e.flash-dt);
+      let blocker:Unit|undefined;let nearest=-Infinity;
+      for(const u of s.units){if(u.hp<=0||u.lane!==e.lane||u.x>=e.x)continue;if(e.x-u.x<118&&u.x>nearest){nearest=u.x;blocker=u}}
+      if(blocker){
+        e.attackClock-=dt;
+        if(e.attackClock<=0){e.attackClock=clamp(1.4-e.stats.speed/260,.68,1.35);const mult=eff(e.attackType,blocker.types),mit=100/(100+(blocker.stats.defense+blocker.stats.specialDefense)*.22),dmg=e.damage*mit*mult*1.35;blocker.hp-=dmg;blocker.flash=.1;if(mult>=2)addFx(s,blocker.x,blocker.y-44,'WEAK!','bad')}
+      }else{
+        e.x-=e.moveSpeed*dt*(1+s.wave*.025);
+        if(e.x<92){
+          if(s.guards[e.lane]){s.guards[e.lane]=false;guardTriggered.add(e.lane);addFx(s,130,e.y,'GUARD!','good')}
+          else{e.hp=0;s.hearts=Math.max(0,s.hearts-1);if(s.hearts===0)s.gameOver='DEFEAT'}
+        }
+      }
+    }
+    if(guardTriggered.size){for(const e of s.enemies)if(guardTriggered.has(e.lane))e.hp=0}
+
+    for(const o of s.orbs){o.ttl-=dt;o.y+=o.vy*dt}
+    for(const t of s.texts){t.ttl-=dt;t.y-=18*dt}
+    s.units=s.units.filter(u=>u.hp>0);
+    s.enemies=s.enemies.filter(e=>e.hp>0);
+    s.orbs=s.orbs.filter(o=>o.ttl>0).slice(-10);
+    s.shots=s.shots.filter(sh=>sh.ttl>0).slice(-70);
+    s.texts=s.texts.filter(t=>t.ttl>0).slice(-28);
+
+    if(s.waveSpawned<s.waveTarget){s.spawnClock-=dt;if(s.spawnClock<=0&&s.enemies.length<22){spawnEnemy(s);s.waveSpawned++;s.spawnClock=clamp(2.7-s.wave*.2,1.35,2.6)*(.82+Math.random()*.45)}}
+    else if(s.enemies.length===0){s.intermission+=dt;if(s.intermission>2.3){if(s.wave>=5){s.gameOver='VICTORY';s.score+=2500}else{s.wave++;s.waveSpawned=0;s.waveTarget=6+s.wave*2;s.intermission=0;s.spawnClock=1.7;s.aura+=75;addFx(s,800,70,`WAVE ${s.wave}`,'good')}}}
+
+    if(s.uiClock>=.25||s.gameOver){s.uiClock=0;sync(s)}
+  },[catalog,deck,dims,sync]);
+
+  const images=useRef<Record<number,HTMLImageElement>>({});
+  const imageFor=(p:PokemonDef)=>{let im=images.current[p.id];if(!im){im=new Image();im.decoding='async';im.src=p.sprite;images.current[p.id]=im}return im};
+  const draw=useCallback((ctx:CanvasRenderingContext2D,cv:HTMLCanvasElement)=>{
+    const s=state.current;if(!s)return;const sx=cv.width/dims.W,sy=cv.height/dims.H;ctx.setTransform(sx,0,0,sy,0,0);ctx.clearRect(0,0,dims.W,dims.H);ctx.imageSmoothingEnabled=true;
+    const bg=ctx.createLinearGradient(0,0,dims.W,0);bg.addColorStop(0,'#153e2c');bg.addColorStop(.62,'#174d36');bg.addColorStop(1,'#102d35');ctx.fillStyle=bg;ctx.fillRect(0,0,dims.W,dims.H);
+    for(let lane=0;lane<5;lane++){const y=lane*dims.laneH;ctx.fillStyle=lane%2?'rgba(4,25,23,.24)':'rgba(82,145,79,.13)';ctx.fillRect(0,y,dims.W,dims.laneH-2);ctx.strokeStyle='rgba(255,255,255,.075)';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(dims.W,y);ctx.stroke();for(let col=0;col<dims.cols;col++){const x=dims.gridX+col*dims.cellW;ctx.strokeStyle=s.selected>=0?'rgba(139,255,179,.21)':'rgba(255,255,255,.045)';ctx.strokeRect(x+2,y+5,dims.cellW-7,dims.laneH-10)}}
+    ctx.fillStyle='#081e22';ctx.fillRect(0,0,92,dims.H);ctx.fillStyle='#95b3b5';ctx.font='800 12px system-ui';ctx.textAlign='center';ctx.fillText('BASE',46,21);
+    for(let lane=0;lane<5;lane++){const y=lane*dims.laneH+dims.laneH/2;if(s.guards[lane]){ctx.fillStyle='#ef4c55';ctx.beginPath();ctx.arc(116,y,17,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='800 10px system-ui';ctx.fillText('G',116,y+3)}else{ctx.strokeStyle='rgba(255,255,255,.12)';ctx.strokeRect(101,y-14,29,28)}}
+
+    const drawMon=(p:Unit|Enemy,enemy:boolean)=>{const size=enemy?((p as Enemy).elite?92:72):76;const img=imageFor(p);ctx.save();ctx.translate(p.x,p.y);if(p.flash>0){ctx.globalAlpha=.45;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(0,0,size*.52,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}if(img.complete&&img.naturalWidth)ctx.drawImage(img,-size/2,-size/2,size,size);else{ctx.fillStyle=typeColor[p.attackType]||'#aaa';ctx.beginPath();ctx.arc(0,0,size*.35,0,Math.PI*2);ctx.fill()}const max=enemy?(p as Enemy).scaledHp:p.maxHp;ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(-32,size*.44,64,5);ctx.fillStyle=enemy?'#ff666c':'#65f696';ctx.fillRect(-32,size*.44,64*clamp(p.hp/max,0,1),5);if(enemy&&(p as Enemy).elite){ctx.fillStyle='#ffd65a';ctx.font='900 10px system-ui';ctx.fillText('ELITE',0,-size*.48)}ctx.restore()};
+    for(const u of s.units)drawMon(u,false);for(const e of s.enemies)drawMon(e,true);
+    for(const sh of s.shots){ctx.fillStyle=typeColor[sh.type]||'#fff';ctx.beginPath();ctx.arc(sh.x,sh.y,7,0,Math.PI*2);ctx.fill();ctx.shadowColor=ctx.fillStyle as string;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0}
+    for(const o of s.orbs){ctx.save();ctx.translate(o.x,o.y);ctx.fillStyle='rgba(86,238,255,.18)';ctx.beginPath();ctx.arc(0,0,25,0,Math.PI*2);ctx.fill();ctx.fillStyle='#76f7ff';ctx.beginPath();ctx.arc(0,0,11,0,Math.PI*2);ctx.fill();ctx.fillStyle='#06333b';ctx.font='900 8px system-ui';ctx.fillText(`+${o.value}`,0,3);ctx.restore()}
+    for(const t of s.texts){ctx.globalAlpha=clamp(t.ttl/.35,0,1);ctx.fillStyle=t.kind==='good'?'#7bffa6':t.kind==='bad'?'#ff8a8e':'#fff';ctx.font='900 18px system-ui';ctx.textAlign='center';ctx.fillText(t.text,t.x,t.y);ctx.globalAlpha=1}
+  },[dims]);
+
+  useEffect(()=>{
+    const cv=canvasRef.current;if(!cv)return;const ctx=cv.getContext('2d');if(!ctx)return;let raf=0,last=performance.now(),acc=0;const STEP=1/60;
+    const resize=()=>{const r=cv.getBoundingClientRect(),dpr=Math.min(window.devicePixelRatio||1,2);const w=Math.max(2,Math.round(r.width*dpr)),h=Math.max(2,Math.round(r.height*dpr));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}};
+    const ro=new ResizeObserver(resize);ro.observe(cv);resize();
+    const frame=(now:number)=>{resize();let dt=Math.min((now-last)/1000,.05);last=now;if(!pausedRef.current&&!document.hidden){acc+=dt;let steps=0;while(acc>=STEP&&steps<3){update(STEP);acc-=STEP;steps++}if(steps===3)acc=0}else acc=0;draw(ctx,cv);raf=requestAnimationFrame(frame)};
+    raf=requestAnimationFrame(frame);return()=>{cancelAnimationFrame(raf);ro.disconnect()};
+  },[draw,update]);
+
+  const selectPokemon=(index:number)=>{const s=state.current;if(!s||s.gameOver)return;s.selected=s.selected===index?-1:index;sync(s)};
+  const onArenaPointer=(ev:React.PointerEvent<HTMLCanvasElement>)=>{
+    const s=state.current,cv=canvasRef.current;if(!s||!cv||s.gameOver||pausedRef.current)return;const r=cv.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width*dims.W,y=(ev.clientY-r.top)/r.height*dims.H;
+    for(let i=s.orbs.length-1;i>=0;i--){const o=s.orbs[i];if((x-o.x)**2+(y-o.y)**2<34**2){s.aura+=o.value;s.orbs.splice(i,1);sync(s);return}}
+    if(s.selected<0)return;const id=deck[s.selected],p=catalog[id];if(!p||s.aura<p.cost||(s.cooldowns[id]||0)>0)return;const lane=Math.floor(y/dims.laneH),col=Math.floor((x-dims.gridX)/dims.cellW);if(lane<0||lane>4||col<0||col>=dims.cols)return;
+    if(s.units.some(u=>u.lane===lane&&u.col===col))return;const ux=dims.gridX+col*dims.cellW+dims.cellW/2,uy=lane*dims.laneH+dims.laneH/2;s.units.push({...p,uid:s.uid++,lane,col,x:ux,y:uy,hp:p.maxHp,attackClock:.25,auraClock:7,flash:0});s.aura-=p.cost;s.cooldowns[id]=p.cooldown;s.selected=-1;sync(s);
+  };
+
+  const waveProgress=clamp(ui.waveSpawned/Math.max(1,ui.waveTarget),0,1);
+  return <main className="battleShell">
+    <header className="battleHud">
+      <div className="auraHud"><b>✦ {ui.aura}</b><small>AURA</small></div>
+      <div className="waveHud"><div className="waveLine"><b>WAVE {ui.wave}/5</b><span>{ui.waveSpawned}/{ui.waveTarget}</span></div><div className="waveTrack"><i style={{width:`${waveProgress*100}%`}}/></div></div>
+      <div className="heartHud" aria-label={`${ui.hearts} hearts`}>{[0,1,2].map(i=><span key={i} className={i<ui.hearts?'alive':''}>♥</span>)}</div>
+      <div className="scoreHud"><small>SCORE</small><b>{ui.score}</b></div>
+      <button className="pauseBtn" onClick={()=>setPaused(true)}>Ⅱ</button>
+    </header>
+    <section className="arenaWrap"><canvas ref={canvasRef} onPointerDown={onArenaPointer}/></section>
+    <section className="deckBar">
+      <div className="deckCards">{deck.map((id,index)=>{const p=catalog[id],cd=ui.cooldowns[id]||0,disabled=ui.aura<p.cost||cd>0;return <button key={id} className={`deckCard ${ui.selected===index?'selected':''} ${disabled?'disabled':''}`} onClick={()=>selectPokemon(index)}><img src={p.sprite}/><div className="deckInfo"><b>{p.name}</b><span>{p.role}</span><strong>✦{p.cost}</strong></div>{cd>0&&<em>{cd.toFixed(1)}</em>}<i className="typeStrip" style={{background:typeColor[p.attackType]||'#777'}}/></button>})}</div>
+      <aside className="guardLegend"><b>POKÉ-GUARDS</b><span>{ui.guards.map((on,i)=><i className={on?'on':''} key={i}>{i+1}</i>)}</span></aside>
+    </section>
+    {(paused||ui.gameOver)&&<div className="pauseOverlay"><section>{ui.gameOver?<><div className={`result ${ui.gameOver==='VICTORY'?'win':'lose'}`}>{ui.gameOver}</div><p>Score {ui.score}</p><button className="primary" onClick={onRestart}>PLAY AGAIN</button><button onClick={onExit}>MAIN MENU</button></>:<><h2>PAUSED</h2><p>Game simulation is stopped.</p><button className="primary" onClick={()=>setPaused(false)}>RESUME</button><button onClick={onRestart}>RESTART</button><button onClick={onExit}>MAIN MENU</button></>}</section></div>}
+  </main>;
+}
