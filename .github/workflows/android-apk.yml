@@ -1,0 +1,65 @@
+name: Build Android APK
+on:
+  push:
+    branches: [pvz-pokemon-defense-v01]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Restore v0.2 pixel source payload
+        run: |
+          base64 -d build_payload/App.tsx.gz.b64 | gzip -d > App.tsx
+          cat build_payload/styles_v02.part00 build_payload/styles_v02.part01 | base64 -d | gzip -d > styles.css
+      - name: Verify stable signing key
+        run: echo "2ac9a5af169d1ed755714aa23c766c7a4a15b122e96679dd1263b416573f3fbf  signing/plc-dev.keystore" | sha256sum -c -
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build web game
+        run: npm run build
+      - name: Create Android project
+        run: npx cap add android
+      - name: Patch Android v0.2 + stable signing
+        run: node scripts/patch-android.mjs
+      - name: Sync Capacitor
+        run: npx cap sync android
+      - name: Build signed APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Pokemon-Lane-Clash-v0.2.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pokemon-Lane-Clash-v0.2.0-APK
+          path: Pokemon-Lane-Clash-v0.2.0.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish installable APK branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf /tmp/apk-publish
+          mkdir -p /tmp/apk-publish
+          cp Pokemon-Lane-Clash-v0.2.0.apk /tmp/apk-publish/
+          cd /tmp/apk-publish
+          git init
+          git checkout -b apk-output
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf "Pokemon Lane Clash v0.2.0\nSource: pvz-pokemon-defense-v01\nCommit: %s\nRun: %s\nVersionCode: 20\nSigning: stable-dev-key-v1\n" "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD.txt
+          git add Pokemon-Lane-Clash-v0.2.0.apk BUILD.txt
+          git commit -m "build: publish Pokemon Lane Clash v0.2.0 APK"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin apk-output
