@@ -22,10 +22,7 @@ jobs:
       - name: Restore v0.2 pixel source payload
         run: |
           base64 -d build_payload/App.tsx.gz.b64 | gzip -d > App.tsx
-          base64 -d build_payload/styles.css.gz.b64 | gzip -d > styles.css
-          mkdir -p public/assets/ui
-          cat build_payload/ui_pack.part00 build_payload/ui_pack.part01 build_payload/ui_pack.part02 build_payload/ui_pack.part03 > public/assets/ui/ui_pack.b64
-          echo "99a8a1278863599a54caeaa12239c9fd01f769af5d07f92d3f35d1e49bb00372  public/assets/ui/ui_pack.b64" | sha256sum -c -
+          cat build_payload/styles_v02.part00 build_payload/styles_v02.part01 | base64 -d | gzip -d > styles.css
       - name: Restore stable signing key
         run: |
           base64 -d signing/plc-dev.keystore.b64 > signing/plc-dev.keystore
