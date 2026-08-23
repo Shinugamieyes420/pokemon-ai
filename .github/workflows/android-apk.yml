@@ -23,10 +23,8 @@ jobs:
         run: |
           base64 -d build_payload/App.tsx.gz.b64 | gzip -d > App.tsx
           cat build_payload/styles_v02.part00 build_payload/styles_v02.part01 | base64 -d | gzip -d > styles.css
-      - name: Restore stable signing key
-        run: |
-          base64 -d signing/plc-dev.keystore.b64 > signing/plc-dev.keystore
-          echo "2ac9a5af169d1ed755714aa23c766c7a4a15b122e96679dd1263b416573f3fbf  signing/plc-dev.keystore" | sha256sum -c -
+      - name: Verify stable signing key
+        run: echo "2ac9a5af169d1ed755714aa23c766c7a4a15b122e96679dd1263b416573f3fbf  signing/plc-dev.keystore" | sha256sum -c -
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Build web game
