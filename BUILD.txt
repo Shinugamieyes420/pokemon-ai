@@ -1,0 +1,6 @@
+Pokemon Lane Clash v0.2.0
+Source: pvz-pokemon-defense-v01
+Commit: 502576fbd717bad7e20a8b4ee88afbc6c5350c61
+Run: 32614649272
+VersionCode: 20
+Signing: stable-dev-key-v1
