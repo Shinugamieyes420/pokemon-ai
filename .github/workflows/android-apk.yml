@@ -52,7 +52,7 @@ jobs:
           git checkout -b apk-output
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          printf "Pokemon Lane Clash v0.1\nSource: pvz-pokemon-defense-v01\nCommit: %s\n" "$GITHUB_SHA" > BUILD.txt
+          printf "Pokemon Lane Clash v0.1\nSource: pvz-pokemon-defense-v01\nCommit: %s\nRun: %s\n" "$GITHUB_SHA" "$GITHUB_RUN_ID" > BUILD.txt
           git add Pokemon-Lane-Clash-v0.1.apk BUILD.txt
           git commit -m "build: publish Pokemon Lane Clash v0.1 APK"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
